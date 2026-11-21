@@ -591,7 +591,6 @@ html.browser #app { height: auto !important; }
 
 /* the "Wine is missing" card */
 .banner.deps { border-color: rgba(255, 170, 70, .45) !important; margin-bottom: 18px; }
-.banner.deps.ready { border-color: rgba(46, 229, 165, .38) !important; }
 .banner .dot.warn { background: rgba(255, 170, 70, .14); color: #ffb86b; }
 .deps-line { display: block; margin-top: 4px; font: 12px ui-monospace, "SF Mono", monospace; color: var(--text-3) !important; word-break: break-all; }
 .proton-box { margin: 0 0 14px; }

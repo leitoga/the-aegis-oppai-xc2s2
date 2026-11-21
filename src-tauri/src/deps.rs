@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -20,8 +20,6 @@ pub struct Distro {
     pub name: String,
     /// the command that installs Wine (and gamemode), with sudo
     pub command: String,
-    #[serde(skip)]
-    ubuntu_codename: Option<String>,
 }
 
 pub fn family_of(os_release: &str) -> (String, String) {
@@ -55,49 +53,17 @@ pub fn family_of(os_release: &str) -> (String, String) {
 fn install_args(family: &str) -> Option<Vec<&'static str>> {
     Some(match family {
         "arch" => vec!["pacman", "-S", "--needed", "--noconfirm", "wine", "gamemode"],
+        "debian" => vec!["apt-get", "install", "-y", "wine", "gamemode"],
+        "fedora" => vec!["dnf", "install", "-y", "wine", "gamemode"],
+        "suse" => vec!["zypper", "--non-interactive", "install", "wine", "gamemode"],
         _ => return None,
     })
 }
 
 pub fn distro() -> Distro {
-    let release = fs::read_to_string("/etc/os-release").unwrap_or_default();
-    let (family, name) = family_of(&release);
-    let field = |key: &str| release.lines().find_map(|l| l.strip_prefix(&format!("{key}="))).map(|v| v.trim_matches('"').to_string()).unwrap_or_default();
-    let id = field("ID").to_lowercase();
-    let ubuntu_code = field("UBUNTU_CODENAME");
-    let ubuntu_like = id == "ubuntu" || !ubuntu_code.is_empty() || field("ID_LIKE").to_lowercase().split_whitespace().any(|x| x == "ubuntu");
-    let codename = if !ubuntu_code.is_empty() { ubuntu_code } else { field("VERSION_CODENAME") };
-    let ubuntu_codename = (family == "debian" && ubuntu_like && !codename.is_empty()
-        && codename.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')).then_some(codename);
-    let command = if ubuntu_codename.is_some() { "sudo apt-get install winehq-stable (Wine 11)".into() }
-        else { install_args(&family).map(|a| format!("sudo {}", a.join(" "))).unwrap_or_default() };
-    Distro { family, name, command, ubuntu_codename }
-}
-
-/// Reads the version from the same Wine executable that the launcher will use.
-pub fn wine_version(path: &str) -> Option<String> {
-    let out = Command::new(path).arg("--version").output().ok()?;
-    if !out.status.success() { return None; }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let version = text.split(|c: char| !c.is_ascii_digit() && c != '.')
-        .find(|s| s.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
-    Some(version.to_string())
-}
-
-pub fn is_wine_11_or_newer(version: Option<&str>) -> bool {
-    version.and_then(|v| v.split('.').next()).and_then(|v| v.parse::<u32>().ok()).is_some_and(|major| major >= 11)
-}
-
-fn ubuntu_wine11_command(codename: &str) -> String {
-    format!("export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y ca-certificates wget && dpkg --add-architecture i386 && install -d -m 0755 /etc/apt/keyrings && wget -qO /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && wget -qO /etc/apt/sources.list.d/winehq-{codename}.sources https://dl.winehq.org/wine-builds/ubuntu/dists/{codename}/winehq-{codename}.sources && apt-get update && apt-get install -y --install-recommends winehq-stable gamemode")
-}
-
-fn installer_args(d: &Distro) -> Option<Vec<String>> {
-    if let Some(codename) = &d.ubuntu_codename {
-        Some(vec!["sh".into(), "-c".into(), ubuntu_wine11_command(codename)])
-    } else {
-        install_args(&d.family).map(|args| args.iter().map(|s| s.to_string()).collect())
-    }
+    let (family, name) = family_of(&fs::read_to_string("/etc/os-release").unwrap_or_default());
+    let command = install_args(&family).map(|a| format!("sudo {}", a.join(" "))).unwrap_or_default();
+    Distro { family, name, command }
 }
 
 /// The program names of the running processes (from /proc/<pid>/cmdline: `comm` and `pgrep -x` stop at 15 characters, and
@@ -139,12 +105,17 @@ fn graphical_auth() -> bool {
 /// when there is no password window, Err("unknown-distro") when the distribution is not known.
 pub fn install_wine_graphical(log: &(dyn Fn(String) + Sync)) -> Result<(), String> {
     let d = distro();
-    let args = installer_args(&d).ok_or("unknown-distro")?;
+    let args = install_args(&d.family).ok_or("unknown-distro")?;
     if !graphical_auth() {
         return Err("no-graphical".into());
     }
     let mut c = host_cmd("pkexec");
-    c.args(&args);
+    // apt needs its index first: one pkexec call (one password) for both
+    if d.family == "debian" {
+        c.args(["sh", "-c", &format!("apt-get update && {}", args.join(" "))]);
+    } else {
+        c.args(&args);
+    }
     c.env("DEBIAN_FRONTEND", "noninteractive").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = c.spawn().map_err(|e| format!("pkexec: {e}"))?;
     let err = child.stderr.take().unwrap();
@@ -191,14 +162,15 @@ fn terminal() -> Option<(PathBuf, Vec<&'static str>)> {
 /// Plan B: a terminal with the install command; sudo asks for the password there.
 pub fn install_wine_terminal(lang_es: bool) -> Result<String, String> {
     let d = distro();
-    let args = installer_args(&d).ok_or("unknown-distro")?;
+    if d.command.is_empty() {
+        return Err("unknown-distro".into());
+    }
     let (term, pre) = terminal().ok_or("no-terminal")?;
-    let cmd = if d.ubuntu_codename.is_some() { format!("sudo bash -c '{}'", args[2].replace('\'', "'\\''")) }
-        else { format!("sudo {}", args.join(" ")) };
+    let cmd = if d.family == "debian" { format!("sudo apt-get update && {}", d.command) } else { d.command.clone() };
     let (hello, done, fail) = if lang_es {
-        ("Se va a instalar Wine 11 (y gamemode) para The Aegis’s Oppai. Escribe tu contraseña cuando la pida.", "Listo. Ya puedes cerrar esta ventana y volver al launcher.", "No se pudo instalar. Revisa el mensaje de arriba.")
+        ("Se va a instalar Wine (y gamemode) para The Aegis’s Oppai. Escribe tu contraseña cuando la pida.", "Listo. Ya puedes cerrar esta ventana y volver al launcher.", "No se pudo instalar. Revisa el mensaje de arriba.")
     } else {
-        ("Installing Wine 11 (and gamemode) for The Aegis’s Oppai. Type your password when asked.", "Done. You can close this window and go back to the launcher.", "The install failed. See the message above.")
+        ("Installing Wine (and gamemode) for The Aegis’s Oppai. Type your password when asked.", "Done. You can close this window and go back to the launcher.", "The install failed. See the message above.")
     };
     let script = format!("echo '{hello}'; echo; echo \"$ {cmd}\"; if {cmd}; then echo; echo '{done}'; else echo; echo '{fail}'; fi; echo; read -r -p '[Enter]' _");
     let mut c = host_cmd(&term);
@@ -290,7 +262,7 @@ mod tests {
         assert_eq!(family_of("ID=\"opensuse-tumbleweed\"\nID_LIKE=\"opensuse suse\"\n").0, "suse");
         assert_eq!(family_of("ID=fedora\n").0, "fedora");
         assert_eq!(family_of("ID=nixos\n").0, "unknown");
-        assert!(install_args("debian").is_none(), "only Ubuntu-based systems use WineHQ's Wine 11 package");
+        assert_eq!(install_args("debian").unwrap()[0], "apt-get");
         let ps = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert!(polkit_agent(&ps(&["systemd", "polkit-kde-authentication-agent-1"])));
         assert!(polkit_agent(&ps(&["gnome-shell"])));

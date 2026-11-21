@@ -36,10 +36,9 @@ dump**, keeps several installs ("instances") side by side, and starts the game t
   always after a backup of the current saves; make a backup; open the folder.
 - **Instances**: add an existing install folder, build another version, set the default, check for updates of the port and of
   the launcher (channel stable / preview); "Update" downloads the newer package over the instance and rebuilds it.
-- **Installs what the game needs**: when Wine 11 or newer is missing, *Install Wine 11* uses WineHQ's official repository on
-  Ubuntu-based systems or the system package manager on CachyOS/Arch, through the system's own password window (`pkexec`), or
-  opens a terminal with `sudo` as a fallback — the launcher never sees the password. It shows a green OK check after it
-  verifies Wine 11 or newer. For DLSS without Proton it downloads the latest **GE-Proton** (SHA-512
+- **Installs what the game needs**: when Wine is missing, *Install Wine* uses your distribution's package manager (pacman,
+  apt, dnf or zypper) through the system's own password window (`pkexec`), or opens a terminal with the `sudo` command as a
+  fallback — the launcher never sees the password. For DLSS without Proton it downloads the latest **GE-Proton** (SHA-512
   checked) into Steam's compatibility tools folder, or its own when there is no Steam; no password needed.
 - Fully responsive window (720×520 to 4K) with its own title bar, maximize/restore, and a "safe drawing" switch for drivers
   where WebKit's window stays blank. Registers itself in the applications menu so the task bar knows its window.
@@ -82,11 +81,11 @@ rest:
 
 | | Installed by the launcher | By hand, if you prefer |
 |---|---|---|
-| Wine 11+ (building, TAAU, FSR 3.1) | *Install Wine 11* → your password in the system's window | CachyOS/Arch: `sudo pacman -S wine` · Ubuntu: WineHQ's official APT repository |
+| Wine (building, TAAU, FSR 3.1) | *Install Wine* → your password in the system's window | Arch: `sudo pacman -S wine` · Ubuntu: `sudo apt install wine` |
 | Proton (DLSS only) | *NVIDIA DLSS* card → *Download GE-Proton* (~570 MB, no password) | proton-cachyos, GE-Proton, or Steam's Proton |
 | gamemode (optional) | installed together with Wine | `gamemode` package |
 
-Wine 11 or newer is required for Wine-based builds and play. Proton remains a separate option for DLSS.
+A Wine or Proton that is already installed is used as it is.
 
 ## Using it
 
