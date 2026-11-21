@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Aegis’s Oppai · XC2S2 Edition</title>
+    <link rel="icon" type="image/png" href="icon.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+    <div class="frame" aria-hidden="true"></div>
+    <div id="app">
+      <header class="titlebar" data-tauri-drag-region>
+        <img src="icon.png" alt="" data-tauri-drag-region />
+        <span class="name" data-tauri-drag-region>The Aegis’s Oppai <span style="color:var(--emerald);font-weight:500">XC2S2 Edition</span></span>
+        <span class="ver" id="app-ver" data-tauri-drag-region></span>
+        <div class="spacer" data-tauri-drag-region></div>
+        <button class="tb-btn" id="btn-settings"></button>
+        <button class="tb-btn" id="btn-min"></button>
+        <button class="tb-btn" id="btn-max"></button>
+        <button class="tb-btn close" id="btn-close"></button>
+      </header>
+      <div class="scroll" id="scroll">
+        <div class="backdrop" id="backdrop" hidden><img alt="" /></div>
+        <div id="view"></div>
+      </div>
+    </div>
+    <div id="toast" aria-live="polite"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

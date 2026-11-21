@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "The Aegis Oppai",
+  "mainBinaryName": "aegis-oppai",
+  "version": "0.1.0",
+  "identifier": "io.github.aegisoppai.xc2s2",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "The Aegis’s Oppai · XC2S2 Edition",
+        "width": 1180,
+        "height": 880,
+        "minWidth": 720,
+        "minHeight": 520,
+        "decorations": false,
+        "center": true,
+        "resizable": true,
+        "backgroundColor": "#00000000",
+        "transparent": true,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "appimage"
+    ],
+    "category": "Game",
+    "shortDescription": "Launcher for the XC2 NS2 static recompilation (The Aegis’s Oppai XC2S2 Edition)",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}
