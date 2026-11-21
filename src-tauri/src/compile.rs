@@ -23,7 +23,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-pub const STEPS: [&str; 7] = ["package", "prefix", "lift", "zig", "link", "shaders", "done"];
+pub const STEPS: [&str; 8] = ["package", "prefix", "extract", "lift", "zig", "link", "shaders", "done"];
 
 #[derive(Serialize, Clone, Default)]
 pub struct Progress {
@@ -156,7 +156,7 @@ pub fn kill(shared: &Shared, prefix: Option<&Path>) {
 fn wine_cmd(req: &Request, inst: &Path) -> Result<Command, String> {
     let wine = crate::launch::wine(&req.wine).ok_or("no-wine")?;
     let mut c = host_cmd(wine);
-    c.env("WINEPREFIX", inst.join("prefix")).env("WINEDEBUG", "-all").env("WINEDLLOVERRIDES", "mscoree,mshtml=");
+    c.env("WINEPREFIX", inst.join("prefix")).env("WINEDEBUG", "-all").env("WINEDLLOVERRIDES", crate::deps::WINE_OVERRIDES);
     Ok(c)
 }
 
@@ -222,6 +222,43 @@ fn ascii_source(inst: &Path, source: &Path) -> Result<PathBuf, String> {
     }
     std::os::unix::fs::symlink(source, &link).map_err(|e| format!("{}: {e}", link.display()))?;
     Ok(link)
+}
+
+/// The folder of an unpacked .nup the game runs from: the newest update that has both exefs/main and romfs/bf2.ard, else
+/// the base game.
+fn pick_dump(out: &Path) -> Result<PathBuf, String> {
+    let complete = |d: &Path| d.join("exefs/main").is_file() && d.join("romfs/bf2.ard").is_file();
+    let mut updates: Vec<(u64, PathBuf)> = fs::read_dir(out.join("updates"))
+        .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_string_lossy().parse::<u64>().ok().map(|v| (v, e.path()))).collect())
+        .unwrap_or_default();
+    updates.sort();
+    if let Some((_, d)) = updates.into_iter().rev().find(|(_, d)| complete(d)) {
+        return Ok(d);
+    }
+    let base = out.join("base");
+    if complete(&base) {
+        return Ok(base);
+    }
+    Err(format!("{}: no exefs/main with romfs/bf2.ard in the package", out.display()))
+}
+
+/// A `.nup` the engine started extracting and did not finish (the launcher was closed, the PC went off) leaves `pkg/exefs`
+/// complete and `pkg/romfs` partial, and the engine then takes the game files as installed. When the romfs has no `bf2.ard`
+/// the launcher's own extraction is thrown away so the engine extracts again. Only for a `.nup` source: a folder source is
+/// linked, never extracted, and nothing of the player's dump is touched.
+fn clear_partial_extraction(ctx: &Ctx, pkg: &Path, source: &Path) {
+    if !source.is_file() {
+        return;
+    }
+    let romfs = pkg.join("romfs");
+    let exefs = pkg.join("exefs");
+    let linked = |p: &Path| fs::symlink_metadata(p).map(|m| m.file_type().is_symlink()).unwrap_or(false);
+    if !exefs.exists() || linked(&romfs) || linked(&exefs) || romfs.join("bf2.ard").is_file() {
+        return;
+    }
+    ctx.log("the game files from the .nup were not completely extracted: extracting them again");
+    let _ = fs::remove_dir_all(&romfs);
+    let _ = fs::remove_dir_all(&exefs);
 }
 
 fn has_fma() -> bool {
@@ -438,17 +475,46 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
     marker.source = source.display().to_string();
     instance::write_marker(inst, &marker)?;
 
-    // 2. the Wine prefix
+    // 2. Wine: the launcher's portable Wine 11.22 (downloaded once), and the prefix prepared without any window
     ctx.set("prefix", -1.0, "");
-    if !inst.join("prefix/system.reg").is_file() {
-        let mut c = wine_cmd(req, inst)?;
-        c.arg("wineboot").arg("-u");
-        ctx.run(c, &|_| {})?;
+    if req.wine.trim().is_empty() && crate::deps::own_wine().is_none() {
+        ctx.log(format!("downloading Wine {}", crate::deps::WINE_VERSION));
+        crate::deps::install_wine(&ctx.shared.cancel, &|_, d, t| {
+            ctx.set("prefix", if t > 0 { d as f64 / t as f64 } else { -1.0 }, format!("Wine {} · {:.0} / {:.0} MB", crate::deps::WINE_VERSION, d as f64 / 1e6, t as f64 / 1e6))
+        })?;
     }
+    let wine = crate::launch::wine(&req.wine).ok_or("no-wine")?;
+    ctx.log(format!("wine {}", wine.display()));
+    crate::deps::prepare_prefix(&wine, &inst.join("prefix"))?;
 
-    // 3. lift (the engine gets a plain-named link when the dump's path has characters outside ASCII)
+    // 3. a .nup is unpacked here, natively and file by file (the engine's own extractor, Windows Python under Wine, holds
+    //    the package in memory: over 20 GB, and the system's OOM killer ends it on a 16 GB PC). The engine then gets the
+    //    folder, which it links into pkg/ (no second copy).
+    clear_partial_extraction(ctx, &pkg, &source);
+    let input = if source.is_file() {
+        ctx.set("extract", 0.0, "");
+        let out = inst.join("dump");
+        let mut last = 0u64;
+        crate::nup::extract(
+            &source,
+            &out,
+            &mut |done, total, _file| {
+                if total > 0 && (done == total || done.saturating_sub(last) >= total / 400) {
+                    last = done;
+                    ctx.set("extract", done as f64 / total as f64, format!("{:.1} / {:.1} GB", done as f64 / 1e9, total as f64 / 1e9));
+                }
+            },
+            &|| ctx.cancelled(),
+        )?;
+        ctx.log(format!("unpacked {}", out.display()));
+        pick_dump(&out)?
+    } else {
+        source.clone()
+    };
+
+    // 4. lift (the engine gets a plain-named link when the dump's path has characters outside ASCII)
     ctx.set("lift", -1.0, "");
-    let engine_source = ascii_source(inst, &source)?;
+    let engine_source = ascii_source(inst, &input)?;
     if engine_source != source {
         ctx.log(format!("source link {} -> {}", engine_source.display(), source.display()));
     }

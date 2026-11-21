@@ -1,182 +1,96 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! What the game needs from the system, installed for the player: Wine with the distribution's own package manager (the
-//! system's password window through pkexec, or a terminal running sudo when there is no polkit agent), and GE-Proton for DLSS,
-//! downloaded into the user's own folders (no password).
-//!
-//! The launcher never sees the password: pkexec's window or sudo in the terminal asks for it.
+//! What the game needs besides the launcher, downloaded into the user's own folders (no password, nothing installed in the
+//! system): a portable Wine 11.22, and GE-Proton for DLSS.
 
 use crate::util::{self, host_cmd};
-use serde::Serialize;
 use std::fs;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
-pub struct Distro {
-    /// arch, debian, fedora, suse, unknown
-    pub family: String,
-    pub name: String,
-    /// the command that installs Wine (and gamemode), with sudo
-    pub command: String,
+// ---- Wine: one portable build, the same on every distribution ----
+
+/// The Wine the launcher uses: Kron4ek's portable build of Wine 11.22 (WoW64, 64-bit only, no 32-bit libraries needed), the
+/// version the port was set up and played with. The distribution's own Wine differs from one release to the next (Ubuntu
+/// and Kubuntu ship older ones), which made Set up behave differently on each.
+pub const WINE_VERSION: &str = "11.22";
+const WINE_DIR: &str = "wine-11.22-amd64-wow64";
+const WINE_URL: &str = "https://github.com/Kron4ek/Wine-Builds/releases/download/11.22/wine-11.22-amd64-wow64.tar.xz";
+const WINE_SIZE: u64 = 98_200_812;
+const WINE_SHA256: &str = "e2967393d203121195cba94159efe9b575a6fa8fad2815c557036e69285093d8";
+
+/// The launcher's own Wine, when it is there.
+pub fn own_wine() -> Option<PathBuf> {
+    let w = util::data_dir().join(WINE_DIR).join("bin/wine");
+    util::is_exec(&w).then_some(w)
 }
 
-pub fn family_of(os_release: &str) -> (String, String) {
-    let field = |k: &str| {
-        os_release.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).map(|v| v.trim_matches('"').to_lowercase()).unwrap_or_default()
-    };
-    let id = field("ID");
-    let like = field("ID_LIKE");
-    let name = os_release
-        .lines()
-        .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-        .map(|v| v.trim_matches('"').to_string())
-        .unwrap_or_else(|| id.clone());
-    let all = format!("{id} {like}");
-    let has = |w: &str| all.split_whitespace().any(|x| x == w);
-    let fam = if has("arch") || has("cachyos") || has("manjaro") || has("endeavouros") {
-        "arch"
-    } else if has("debian") || has("ubuntu") {
-        "debian"
-    } else if has("fedora") || has("rhel") || has("centos") || has("nobara") {
-        "fedora"
-    } else if has("suse") || has("opensuse") || id.starts_with("opensuse") {
-        "suse"
-    } else {
-        "unknown"
-    };
-    (fam.to_string(), name)
-}
-
-/// The package manager's arguments (without sudo/pkexec), non-interactive.
-fn install_args(family: &str) -> Option<Vec<&'static str>> {
-    Some(match family {
-        "arch" => vec!["pacman", "-S", "--needed", "--noconfirm", "wine", "gamemode"],
-        "debian" => vec!["apt-get", "install", "-y", "wine", "gamemode"],
-        "fedora" => vec!["dnf", "install", "-y", "wine", "gamemode"],
-        "suse" => vec!["zypper", "--non-interactive", "install", "wine", "gamemode"],
-        _ => return None,
-    })
-}
-
-pub fn distro() -> Distro {
-    let (family, name) = family_of(&fs::read_to_string("/etc/os-release").unwrap_or_default());
-    let command = install_args(&family).map(|a| format!("sudo {}", a.join(" "))).unwrap_or_default();
-    Distro { family, name, command }
-}
-
-/// The program names of the running processes (from /proc/<pid>/cmdline: `comm` and `pgrep -x` stop at 15 characters, and
-/// the agents' names are longer).
-fn running_programs() -> Vec<String> {
-    let mut v = Vec::new();
-    let Ok(rd) = fs::read_dir("/proc") else { return v };
-    for e in rd.flatten() {
-        if !e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        let Ok(cmd) = fs::read(e.path().join("cmdline")) else { continue };
-        let first = cmd.split(|b| *b == 0).next().unwrap_or_default();
-        let name = String::from_utf8_lossy(first);
-        if let Some(base) = name.rsplit('/').next() {
-            if !base.is_empty() {
-                v.push(base.to_string());
-            }
+/// Downloads the portable Wine (SHA-256 checked) into the launcher's folder. Returns its `wine`.
+pub fn install_wine(cancel: &AtomicBool, progress: &dyn Fn(&str, u64, u64)) -> Result<PathBuf, String> {
+    if let Some(w) = own_wine() {
+        return Ok(w);
+    }
+    let tarball = util::cache_dir().join(format!("{WINE_DIR}.tar.xz"));
+    if !(tarball.is_file() && crate::net::sha256(&tarball)? == WINE_SHA256) {
+        let _ = fs::remove_file(&tarball);
+        crate::net::download(WINE_URL, &tarball, WINE_SIZE, cancel, &|d, t| progress("download", d, t))?;
+        if crate::net::sha256(&tarball)? != WINE_SHA256 {
+            let _ = fs::remove_file(&tarball);
+            return Err(format!("{WINE_URL}: SHA-256 mismatch"));
         }
     }
-    v
-}
-
-/// Whether a polkit agent (the window that asks for the password) runs in this session: KDE, GNOME (built into the shell),
-/// XFCE, MATE, LXQt, Cinnamon, Hyprland...
-pub fn polkit_agent(programs: &[String]) -> bool {
-    programs.iter().any(|p| {
-        let p = p.to_lowercase();
-        (p.contains("polkit") && (p.contains("agent") || p.contains("auth"))) || p == "gnome-shell" || p.contains("policykit") || p == "cinnamon"
-    })
-}
-
-/// pkexec with a polkit agent running.
-fn graphical_auth() -> bool {
-    util::which("pkexec").is_some() && polkit_agent(&running_programs())
-}
-
-/// Installs Wine with the system's password window (pkexec). Lines of the package manager go to `log`. Err("no-graphical")
-/// when there is no password window, Err("unknown-distro") when the distribution is not known.
-pub fn install_wine_graphical(log: &(dyn Fn(String) + Sync)) -> Result<(), String> {
-    let d = distro();
-    let args = install_args(&d.family).ok_or("unknown-distro")?;
-    if !graphical_auth() {
-        return Err("no-graphical".into());
+    progress("extract", 0, 0);
+    fs::create_dir_all(util::data_dir()).map_err(|e| e.to_string())?;
+    let st = host_cmd("tar").arg("-xJf").arg(&tarball).arg("-C").arg(util::data_dir()).status().map_err(|e| format!("tar: {e}"))?;
+    let _ = fs::remove_file(&tarball);
+    if !st.success() {
+        return Err("tar: wine".into());
     }
-    let mut c = host_cmd("pkexec");
-    // apt needs its index first: one pkexec call (one password) for both
-    if d.family == "debian" {
-        c.args(["sh", "-c", &format!("apt-get update && {}", args.join(" "))]);
-    } else {
-        c.args(&args);
-    }
-    c.env("DEBIAN_FRONTEND", "noninteractive").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = c.spawn().map_err(|e| format!("pkexec: {e}"))?;
-    let err = child.stderr.take().unwrap();
-    let out = child.stdout.take().unwrap();
-    std::thread::scope(|s| {
-        s.spawn(|| {
-            for l in BufReader::new(err).lines().map_while(Result::ok) {
-                log(l);
-            }
-        });
-        for l in BufReader::new(out).lines().map_while(Result::ok) {
-            log(l);
-        }
-    });
-    let st = child.wait().map_err(|e| e.to_string())?;
-    match st.code() {
-        Some(0) => Ok(()),
-        // pkexec: 126 the password window was cancelled, 127 not authorized
-        Some(126) | Some(127) => Err("cancelled".into()),
-        Some(n) => Err(format!("exit {n}")),
-        None => Err("killed".into()),
-    }
+    own_wine().ok_or_else(|| format!("{}: not found", util::data_dir().join(WINE_DIR).display()))
 }
 
-/// Terminal emulators and how each runs a command, most common desktops first.
-fn terminal() -> Option<(PathBuf, Vec<&'static str>)> {
-    let list: [(&str, &[&str]); 12] = [
-        ("konsole", &["-e"]),
-        ("gnome-terminal", &["--"]),
-        ("kgx", &["--"]),
-        ("ptyxis", &["--"]),
-        ("xfce4-terminal", &["-x"]),
-        ("mate-terminal", &["-x"]),
-        ("tilix", &["-e"]),
-        ("alacritty", &["-e"]),
-        ("kitty", &[]),
-        ("foot", &[]),
-        ("wezterm", &["start", "--"]),
-        ("xterm", &["-e"]),
-    ];
-    list.iter().find_map(|(t, a)| util::which(t).map(|p| (p, a.to_vec())))
-}
+/// Every Wine call of the launcher: no debug output, no menu entries, no crash window (a crash ends the program, and the
+/// launcher reports it), no Gecko. Mono stays enabled: the port's .NET tools load their DLLs through mscoree.
+pub const WINE_OVERRIDES: &str = "mshtml=;winemenubuilder.exe=d;winedbg.exe=d";
 
-/// Plan B: a terminal with the install command; sudo asks for the password there.
-pub fn install_wine_terminal(lang_es: bool) -> Result<String, String> {
-    let d = distro();
-    if d.command.is_empty() {
-        return Err("unknown-distro".into());
+/// The prefix, created or brought up to date before anything else runs in it, without any window: no display is given to
+/// wineboot (so neither "the configuration is being updated" nor "install Wine Mono / Gecko" can show), and the crash
+/// window is turned off in it. Remembers the Wine it was prepared with, so this runs again only when that changes.
+pub fn prepare_prefix(wine: &Path, prefix: &Path) -> Result<(), String> {
+    let stamp = prefix.join(".aegis-wine");
+    let id = wine.display().to_string();
+    if prefix.join("system.reg").is_file() && fs::read_to_string(&stamp).map(|s| s == id).unwrap_or(false) {
+        return Ok(());
     }
-    let (term, pre) = terminal().ok_or("no-terminal")?;
-    let cmd = if d.family == "debian" { format!("sudo apt-get update && {}", d.command) } else { d.command.clone() };
-    let (hello, done, fail) = if lang_es {
-        ("Se va a instalar Wine (y gamemode) para The Aegis’s Oppai. Escribe tu contraseña cuando la pida.", "Listo. Ya puedes cerrar esta ventana y volver al launcher.", "No se pudo instalar. Revisa el mensaje de arriba.")
-    } else {
-        ("Installing Wine (and gamemode) for The Aegis’s Oppai. Type your password when asked.", "Done. You can close this window and go back to the launcher.", "The install failed. See the message above.")
+    fs::create_dir_all(prefix).map_err(|e| format!("{}: {e}", prefix.display()))?;
+    let quiet = |c: &mut std::process::Command| {
+        c.env("WINEPREFIX", prefix)
+            .env("WINEDEBUG", "-all")
+            .env("WINEDLLOVERRIDES", "mscoree,mshtml=;winemenubuilder.exe=d;winedbg.exe=d")
+            .env_remove("DISPLAY")
+            .env_remove("WAYLAND_DISPLAY")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
     };
-    let script = format!("echo '{hello}'; echo; echo \"$ {cmd}\"; if {cmd}; then echo; echo '{done}'; else echo; echo '{fail}'; fi; echo; read -r -p '[Enter]' _");
-    let mut c = host_cmd(&term);
-    c.args(&pre).args(["bash", "-c", &script]);
-    c.spawn().map_err(|e| format!("{}: {e}", term.display()))?;
-    Ok(term.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+    let mut c = host_cmd(wine);
+    c.args(["wineboot", "-u"]);
+    quiet(&mut c);
+    let st = c.status().map_err(|e| format!("wineboot: {e}"))?;
+    if !st.success() {
+        return Err(format!("wineboot: exit {}", st.code().unwrap_or(-1)));
+    }
+    let mut c = host_cmd(wine);
+    c.args(["reg", "add", "HKCU\\Software\\Wine\\WineDbg", "/v", "ShowCrashDialog", "/t", "REG_DWORD", "/d", "0", "/f"]);
+    quiet(&mut c);
+    let _ = c.status();
+    // let the wineserver of this headless session end before the next command starts one with a display
+    let mut c = host_cmd(wine.with_file_name("wineserver"));
+    c.arg("-w");
+    quiet(&mut c);
+    let _ = c.status();
+    let _ = fs::write(&stamp, id);
+    Ok(())
 }
 
 // ---- GE-Proton ----
@@ -243,30 +157,13 @@ pub fn own_proton_dir() -> PathBuf {
     util::data_dir().join("compatibilitytools.d")
 }
 
-pub fn graphical_available() -> bool {
-    graphical_auth()
-}
-
-pub fn terminal_name() -> Option<String> {
-    terminal().and_then(|(p, _)| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn families() {
-        assert_eq!(family_of("ID=cachyos\nID_LIKE=arch\n").0, "arch");
-        assert_eq!(family_of("ID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu 24.04 LTS\"\n"), ("debian".into(), "Ubuntu 24.04 LTS".into()));
-        assert_eq!(family_of("ID=linuxmint\nID_LIKE=\"ubuntu debian\"\n").0, "debian");
-        assert_eq!(family_of("ID=\"opensuse-tumbleweed\"\nID_LIKE=\"opensuse suse\"\n").0, "suse");
-        assert_eq!(family_of("ID=fedora\n").0, "fedora");
-        assert_eq!(family_of("ID=nixos\n").0, "unknown");
-        assert_eq!(install_args("debian").unwrap()[0], "apt-get");
-        let ps = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(polkit_agent(&ps(&["systemd", "polkit-kde-authentication-agent-1"])));
-        assert!(polkit_agent(&ps(&["gnome-shell"])));
-        assert!(polkit_agent(&ps(&["lxqt-policykit-agent"])));
-        assert!(!polkit_agent(&ps(&["polkitd", "bash"])), "the daemon alone asks nobody");
+    fn wine_pins() {
+        assert!(WINE_URL.ends_with(&format!("{WINE_DIR}.tar.xz")));
+        assert_eq!(WINE_SHA256.len(), 64);
+        assert!(!WINE_OVERRIDES.contains("mscoree"), "the .NET tools need mscoree when they run");
     }
 }

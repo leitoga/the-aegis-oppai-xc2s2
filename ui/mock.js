@@ -31,8 +31,7 @@ export async function mockInvoke(cmd, a = {}) {
     case 'write_options': Object.assign(opts, a.options); return null;
     case 'set_config': Object.assign(config, a.patch); return null;
     case 'game_running': return false;
-    case 'deps_info': return { distro: { family: 'debian', name: 'Kubuntu 24.04 LTS', command: 'sudo apt-get install -y wine gamemode' }, graphical: true, terminal: 'konsole' };
-    case 'install_wine': await new Promise((r) => setTimeout(r, 1500)); return 'graphical';
+    case 'install_wine': await new Promise((r) => setTimeout(r, 1500)); return '/home/player/.local/share/aegis-oppai/wine-11.22-amd64-wow64/bin/wine';
     case 'hardware': return { displays: [{ name: 'HDMI-A-2', current: '3840x2160', modes: ['4096x2160', '3840x2160', '2560x1440', '1920x1080', '1680x1050', '1600x900', '1440x900', '1280x1024', '1280x800', '1280x720', '1152x864', '1024x768'] }], pads: [{ name: 'Microsoft X-Box 360 pad', id: '045e:028e' }] };
     case 'build_log': return ['instance /home/player/Games/xc2-recomp-0.1.5', '$ "/usr/bin/wine"', '  STEP: lift done 59.6s', '  333 of 537 to compile'];
     case 'suggest_folder': return '/home/player/Games/xc2-recomp-' + (a.version || 'nueva');

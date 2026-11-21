@@ -36,10 +36,11 @@ dump**, keeps several installs ("instances") side by side, and starts the game t
   always after a backup of the current saves; make a backup; open the folder.
 - **Instances**: add an existing install folder, build another version, set the default, check for updates of the port and of
   the launcher (channel stable / preview); "Update" downloads the newer package over the instance and rebuilds it.
-- **Installs what the game needs**: when Wine is missing, *Install Wine* uses your distribution's package manager (pacman,
-  apt, dnf or zypper) through the system's own password window (`pkexec`), or opens a terminal with the `sudo` command as a
-  fallback — the launcher never sees the password. For DLSS without Proton it downloads the latest **GE-Proton** (SHA-512
-  checked) into Steam's compatibility tools folder, or its own when there is no Steam; no password needed.
+- **Brings its own Wine**: a portable **Wine 11.22** (the version the port was set up and played with), downloaded once
+  into the launcher's folder (SHA-256 checked, no password, nothing installed in the system), so Set up behaves the same on
+  every distribution. **No Wine window ever shows**: the prefix is prepared without a display, the Mono/Gecko prompts and the
+  crash window are off. For DLSS without Proton it downloads the latest **GE-Proton** (SHA-512 checked); no password.
+- **Unpacks the `.nup` natively**, file by file (a few MB of memory), before the port's engine runs.
 - Fully responsive window (720×520 to 4K) with its own title bar, maximize/restore, and a "safe drawing" switch for drivers
   where WebKit's window stays blank. Registers itself in the applications menu so the task bar knows its window.
 
@@ -61,12 +62,11 @@ Tested on CachyOS (KDE Plasma, Wayland), RTX 3070, 4K TV, with an install that h
 | **Play** with Proton + DLSS: same variables as `jugar-xc2.sh`, Streamline 2.14.16 starts, DLSS runs | ✅ verified |
 | Monitor resolutions and controller list | ✅ detected on the test PC |
 | Unit tests (`cargo test`, 11 tests: launch plan, options file, saves search, ini edits, parsers) | ✅ pass |
-| **Set up from a `.nup` inside the launcher** (package download → lift → native zig link → shaders) | ⚠️ not run end to end yet; each step is the one used for the hand-made install |
+| **Set up from a `.nup`** (package → portable Wine → native unpack → lift → native zig link → 12,137 shaders), 15 min, under 8 GB of memory, no Wine window | ✅ verified on CachyOS |
 | Downloading DLSS / FSR from the launcher | ⚠️ URLs and zip contents checked, full flow not run yet |
 | Opening on Ubuntu / Kubuntu | ⚠️ built for it, not yet run on a real Ubuntu PC |
 | FPS counter showing only "FPS nn" (`controls.ini` `[fps] detail = 0`) | ⚠️ value read from the runtime, not yet seen in game |
 | Picking one controller (`SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT`) under Wine/Proton | ⚠️ not tested in game |
-| Installing Wine from the launcher (pkexec password window / terminal) | ⚠️ distribution and password-window detection tested; not yet run on a PC without Wine |
 | Downloading GE-Proton from the launcher | ⚠️ not run end to end yet |
 | Launcher self-update | ⚠️ not tested yet (v0.1.0 → v0.1.1 is the first chance) |
 | Native Linux runtime (no Wine/Proton) | ❌ not started |
@@ -81,11 +81,11 @@ rest:
 
 | | Installed by the launcher | By hand, if you prefer |
 |---|---|---|
-| Wine (building, TAAU, FSR 3.1) | *Install Wine* → your password in the system's window | Arch: `sudo pacman -S wine` · Ubuntu: `sudo apt install wine` |
+| Wine 11.22 (building, TAAU, FSR 3.1) | downloaded by Set up, or *Download Wine* (~98 MB, no password) | — (the launcher prefers its own) |
 | Proton (DLSS only) | *NVIDIA DLSS* card → *Download GE-Proton* (~570 MB, no password) | proton-cachyos, GE-Proton, or Steam's Proton |
-| gamemode (optional) | installed together with Wine | `gamemode` package |
+| gamemode (optional) | — | `gamemode` package |
 
-A Wine or Proton that is already installed is used as it is.
+An already installed Proton is used as it is. Set up needs about 45 GB free and 8 GB of memory.
 
 ## Using it
 

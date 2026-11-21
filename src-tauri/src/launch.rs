@@ -81,8 +81,8 @@ pub fn wine(setting: &str) -> Option<PathBuf> {
     if !s.is_empty() {
         return util::is_exec(Path::new(s)).then(|| PathBuf::from(s));
     }
-    // the distribution's wine, else WineHQ's packages on Debian/Ubuntu (/opt/wine-*)
-    util::which("wine").or_else(|| {
+    // the launcher's own portable Wine 11.22 first (the same everywhere), then the distribution's, then WineHQ's (/opt/wine-*)
+    crate::deps::own_wine().or_else(|| util::which("wine")).or_else(|| {
         ["/opt/wine-stable/bin/wine", "/opt/wine-staging/bin/wine", "/opt/wine-devel/bin/wine"].iter().map(PathBuf::from).find(|p| util::is_exec(p))
     })
 }
@@ -210,7 +210,7 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
     push(&mut env, "NXRT_NVN_SHADER_CACHE", format!("{w}\\shader_cache\\spirv"));
     push(&mut env, "NXRT_NVN_DUMP_MISSING", format!("{w}\\work\\missing"));
     push(&mut env, "NXRT_AOC_DIR", format!("{w}\\dlc"));
-    push(&mut env, "WINEDLLOVERRIDES", "xc2_rt=n".into());
+    push(&mut env, "WINEDLLOVERRIDES", format!("xc2_rt=n;{}", crate::deps::WINE_OVERRIDES));
     push(&mut env, "NXRT_SYSTEM_LANGUAGE", if o.IDIOMA.is_empty() { "LatinAmericanSpanish".into() } else { o.IDIOMA.clone() });
     if o.VENTANA != "auto" {
         if let Some((wd, ht)) = o.VENTANA.split_once('x') {
@@ -280,6 +280,11 @@ pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str)
     }
     let pkg = instance::pkg(inst);
     let p = plan(inst, o, wine_setting, proton_setting, util::now())?;
+    if !p.proton {
+        // no Wine window ever: the prefix is brought up to date headless before the game starts in it
+        let w = wine(wine_setting).ok_or("no-wine")?;
+        crate::deps::prepare_prefix(&w, &inst.join("prefix"))?;
+    }
     write_controls(&pkg, o);
     let _ = fs::create_dir_all(pkg.join("work/logs"));
     let _ = fs::remove_file(pkg.join("shader_cache/spirv.preload.pack"));
@@ -344,7 +349,8 @@ mod tests {
         let get = |k: &str| p.env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone());
         assert_eq!(get("NXRT_XC2_FPS").as_deref(), Some("60"));
         assert_eq!(get("NXRT_GFX_RENDER_SCALE").as_deref(), Some("1.5"));
-        assert_eq!(get("WINEDLLOVERRIDES").as_deref(), Some("xc2_rt=n"));
+        assert!(get("WINEDLLOVERRIDES").unwrap().starts_with("xc2_rt=n;"));
+        assert!(!get("WINEDLLOVERRIDES").unwrap().contains("mscoree"));
         assert!(get("NXRT_DLSS_UPSCALER").is_none());
         assert!(!p.proton);
         assert!(p.args.iter().any(|a| a.ends_with("\\work\\logs\\play-7.log")));

@@ -9,6 +9,7 @@ mod hw;
 mod instance;
 mod launch;
 mod net;
+mod nup;
 mod util;
 
 use serde::{Deserialize, Serialize};
@@ -262,37 +263,24 @@ async fn hardware() -> Hardware {
 
 // ---- what the game needs from the system ----
 
-#[derive(Serialize)]
-struct DepsInfo {
-    distro: deps::Distro,
-    /// the system's password window can be used (pkexec + a polkit agent)
-    graphical: bool,
-    terminal: Option<String>,
-}
-
+/// Downloads the launcher's portable Wine 11.22 (no password, nothing installed in the system).
 #[tauri::command]
-async fn deps_info() -> DepsInfo {
-    tauri::async_runtime::spawn_blocking(|| DepsInfo { distro: deps::distro(), graphical: deps::graphical_available(), terminal: deps::terminal_name() })
-        .await
-        .unwrap_or(DepsInfo { distro: deps::distro(), graphical: false, terminal: None })
-}
-
-/// Installs Wine with the distribution's package manager: "graphical" (the system's password window, progress in the
-/// launcher) or "terminal" (a terminal with sudo). The password never passes through the launcher.
-#[tauri::command]
-async fn install_wine(app: AppHandle, mode: String, lang: String) -> Result<String, String> {
-    if mode == "terminal" {
-        return deps::install_wine_terminal(lang == "es");
+async fn install_wine(app: AppHandle, task: State<'_, Arc<VendorTask>>) -> Result<String, String> {
+    if task.running.swap(true, Ordering::SeqCst) {
+        return Err("busy".into());
     }
+    task.cancel.store(false, Ordering::SeqCst);
+    let t = task.inner().clone();
     let a = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        deps::install_wine_graphical(&|l| {
-            let _ = a.emit("deps-log", l);
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        deps::install_wine(&t.cancel, &|phase, d, total| {
+            let _ = a.emit("vendor-progress", serde_json::json!({"phase": phase, "done": d, "total": total, "id": "wine"}));
         })
     })
     .await
-    .map_err(|e| e.to_string())??;
-    Ok("graphical".into())
+    .map_err(|e| e.to_string());
+    task.running.store(false, Ordering::SeqCst);
+    Ok(res??.display().to_string())
 }
 
 /// Downloads GE-Proton (for DLSS) into Steam's compatibility tools folder, or the launcher's when there is no Steam.
@@ -714,7 +702,7 @@ fn main() {
             get_state, set_config, add_instance, forget_instance, set_default, instance_size, cover, set_cover, read_options,
             write_options, play, game_running, stop_game, releases, update_launcher, start_build, cancel_build, build_log,
             suggest_folder, check_source, vendor_license, install_vendor, cancel_vendor, saves, import_saves, backup_saves,
-            open_path, open_url, pick, hardware, deps_info, install_wine, install_proton,
+            open_path, open_url, pick, hardware, install_wine, install_proton,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");
