@@ -327,6 +327,7 @@ pub fn stop() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn ini_keys_set_or_added() {
@@ -348,8 +349,13 @@ mod tests {
         fs::create_dir_all(&pkg).unwrap();
         fs::write(pkg.join(EXE), b"").unwrap();
         fs::write(pkg.join("launch.env"), "# c\nNXRT_XC2_FPS=60\n").unwrap();
+        let wine = d.join("wine");
+        fs::write(&wine, "#!/bin/sh\necho wine-11.0\n").unwrap();
+        let mut permissions = fs::metadata(&wine).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&wine, permissions).unwrap();
         let o = Options { REESCALADO: "taau".into(), ESCALA: "1.5".into(), ..Default::default() };
-        let p = plan(&d, &o, "/bin/sh", "", 7).unwrap();
+        let p = plan(&d, &o, &wine.display().to_string(), "", 7).unwrap();
         let get = |k: &str| p.env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone());
         assert_eq!(get("NXRT_XC2_FPS").as_deref(), Some("60"));
         assert_eq!(get("NXRT_GFX_RENDER_SCALE").as_deref(), Some("1.5"));
