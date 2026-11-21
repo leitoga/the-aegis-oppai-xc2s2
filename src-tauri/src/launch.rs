@@ -36,7 +36,12 @@ pub fn steam_roots() -> Vec<PathBuf> {
 
 /// Proton builds this PC has, best first: CachyOS's, then GE, then Valve's.
 pub fn proton_candidates() -> Vec<PathBuf> {
-    let mut roots = vec![PathBuf::from("/usr/share/steam/compatibilitytools.d"), PathBuf::from("/usr/local/share/steam/compatibilitytools.d")];
+    let mut roots = vec![
+        PathBuf::from("/usr/share/steam/compatibilitytools.d"),
+        PathBuf::from("/usr/local/share/steam/compatibilitytools.d"),
+        // GE-Proton the launcher downloaded when there is no Steam
+        crate::deps::own_proton_dir(),
+    ];
     for s in steam_roots() {
         roots.push(s.join("compatibilitytools.d"));
         roots.push(s.join("steamapps/common"));
@@ -240,7 +245,12 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
     let gamemode = util::which("gamemoderun");
     let (runner, mut args): (PathBuf, Vec<String>) = if use_proton {
         let proton = proton(proton_setting).ok_or("no-proton")?;
-        let steam = steam_roots().into_iter().next().unwrap_or_else(|| util::home().join(".local/share/Steam"));
+        // Proton runs without Steam too: then the launcher's own folder stands in for Steam's
+        let steam = steam_roots().into_iter().next().unwrap_or_else(|| {
+            let d = util::data_dir().join("steam");
+            let _ = fs::create_dir_all(&d);
+            d
+        });
         push(&mut env, "STEAM_COMPAT_CLIENT_INSTALL_PATH", steam.display().to_string());
         push(&mut env, "STEAM_COMPAT_DATA_PATH", inst.join("proton-pfx").display().to_string());
         push(&mut env, "SteamAppId", "0".into());

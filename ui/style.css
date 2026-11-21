@@ -588,3 +588,10 @@ html.maximized .titlebar { border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #ff5a6a, #52f0b9); background-clip: padding-box; border: 2px solid transparent; }
 html.browser { padding: 0 !important; background: #111 !important; }
 html.browser #app { height: auto !important; }
+
+/* the "Wine is missing" card */
+.banner.deps { border-color: rgba(255, 170, 70, .45) !important; margin-bottom: 18px; }
+.banner .dot.warn { background: rgba(255, 170, 70, .14); color: #ffb86b; }
+.deps-line { display: block; margin-top: 4px; font: 12px ui-monospace, "SF Mono", monospace; color: var(--text-3) !important; word-break: break-all; }
+.proton-box { margin: 0 0 14px; }
+.proton-box .bar { margin: 4px 0 6px; }

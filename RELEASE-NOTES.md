@@ -1,20 +1,19 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.0
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.1
 
-First release of the Linux launcher for the Xenoblade Chronicles 2 – Nintendo Switch 2 Edition static recompilation.
+**Nothing to install by hand any more.** Download the AppImage, open it, and the launcher offers what is missing:
 
-- **One AppImage** for Ubuntu/Kubuntu 22.04 and newer, CachyOS, Arch, Mint, Fedora…
-- Builds the game from **your own dump** (`.nup`, or an `exefs/` + `romfs/` folder; it searches every subfolder).
-- Plays it through **Wine** (TAAU, FSR 3.1) or **Proton** (real NVIDIA DLSS).
-- NVIDIA DLSS and AMD FSR 3.1 are downloaded from the vendors' repositories **after** you accept their license; never bundled.
-- Game settings on the main page: upscaler, output resolution (every mode of your monitor), 3D scale, windowed / borderless,
-  720p internal lock, FPS counter, controller, game language.
-- Saves: import from Lichii or any folder, with a backup first.
-- English and Latin American Spanish.
+- **Wine**: when it is not installed, *Install Wine* installs it (and gamemode) with your distribution's package manager —
+  pacman (Arch, CachyOS, Manjaro), apt (Ubuntu, Kubuntu, Mint, Debian), dnf (Fedora) or zypper (openSUSE). Your password goes
+  in the system's own password window; if there is none, a terminal opens with the `sudo` command. The launcher never sees it.
+- **GE-Proton for DLSS**: if no Proton is found, the *NVIDIA DLSS* card downloads the latest GE-Proton (about 570 MB, SHA-512
+  checked) into Steam's compatibility tools folder, or the launcher's own folder when Steam is not installed. No password.
+  Proton now also runs without Steam.
+- Already installed Wine or Proton is used as before.
 
-No game files, no game art, no NVIDIA or AMD files are included. See the README's *Status* table for what is verified and what
-is not yet.
+Everything from v0.1.0 is unchanged: one AppImage for every distribution, builds from your own dump, Wine/Proton with real
+DLSS, settings on the main page, saves import, English and Spanish. See the README's *Status* table for what is verified.
 
 ---
 
-**Español:** primera versión del launcher para Linux. Un solo AppImage para todas las distros; compila el juego desde tu propio
-volcado; lo juega con Wine o Proton (DLSS real); DLSS y FSR se descargan después de aceptar la licencia del fabricante.
+**Español:** ya no hay que instalar nada a mano. Si falta Wine, el launcher lo instala con el gestor de paquetes de tu distro
+(escribes la contraseña en la ventana del sistema o en una terminal); para DLSS baja GE-Proton solo, sin contraseña.

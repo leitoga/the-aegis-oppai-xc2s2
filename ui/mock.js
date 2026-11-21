@@ -19,7 +19,7 @@ export async function mockInvoke(cmd, a = {}) {
       return {
         config, version: '0.1.0', running: false, system_lang: 'es_AR.UTF-8', jobs: 11,
         building: { state: demo === 'build' ? 'running' : 'idle', step_index: 4, step: 'link', fraction: 0.62, message: '333/537', instance: '/home/player/Games/xc2-recomp-0.1.5' },
-        runners: { wine: '/usr/bin/wine', proton: '/usr/share/steam/compatibilitytools.d/proton-cachyos-slr/proton', protons: ['/usr/share/steam/compatibilitytools.d/proton-cachyos-slr/proton'], gamemode: true, mangohud: true },
+        runners: { wine: new URLSearchParams(location.search).get('nowine') ? null : '/usr/bin/wine', proton: new URLSearchParams(location.search).get('nowine') ? null : '/usr/share/steam/compatibilitytools.d/proton-cachyos-slr/proton', protons: ['/usr/share/steam/compatibilitytools.d/proton-cachyos-slr/proton'], gamemode: true, mangohud: true },
         lichii: [{ emulator: 'Lichii', path: '/home/player/.local/share/lichii/nand/user/save/0000000000000000/0000/0100E95004038000', files: 2, modified: now - 86400 * 2 }],
         instances: config.instances.map((p) => ({ path: p, display: p.replace('/home/player', '~'), exists: true, version: '0.1.4', tag: 'v0.1.4', channel: 'estable', built: now - 3600 * 9, ready: true, dlss: true, fsr: true, language: opts.IDIOMA, has_cover: true, upscaler: opts.REESCALADO })),
       };
@@ -31,6 +31,8 @@ export async function mockInvoke(cmd, a = {}) {
     case 'write_options': Object.assign(opts, a.options); return null;
     case 'set_config': Object.assign(config, a.patch); return null;
     case 'game_running': return false;
+    case 'deps_info': return { distro: { family: 'debian', name: 'Kubuntu 24.04 LTS', command: 'sudo apt-get install -y wine gamemode' }, graphical: true, terminal: 'konsole' };
+    case 'install_wine': await new Promise((r) => setTimeout(r, 1500)); return 'graphical';
     case 'hardware': return { displays: [{ name: 'HDMI-A-2', current: '3840x2160', modes: ['4096x2160', '3840x2160', '2560x1440', '1920x1080', '1680x1050', '1600x900', '1440x900', '1280x1024', '1280x800', '1280x720', '1152x864', '1024x768'] }], pads: [{ name: 'Microsoft X-Box 360 pad', id: '045e:028e' }] };
     case 'build_log': return ['instance /home/player/Games/xc2-recomp-0.1.5', '$ "/usr/bin/wine"', '  STEP: lift done 59.6s', '  333 of 537 to compile'];
     case 'suggest_folder': return '/home/player/Games/xc2-recomp-' + (a.version || 'nueva');

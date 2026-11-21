@@ -27,6 +27,9 @@ const S = {
   saves: {},
   covers: {},
   opts: {},
+  deps: null,
+  depsBusy: false,
+  depsLine: '',
   hw: null,
   log: [],
   showLog: false,
@@ -74,6 +77,7 @@ async function refresh() {
   S.st = await invoke('get_state');
   // English unless the player chose another language (⚙ → General)
   setLang(cfg().lang || 'en');
+  if (!S.deps) invoke('deps_info').then((d) => { S.deps = d; render(); }).catch(() => {});
   if (!S.hw) invoke('hardware').then((h) => { S.hw = h; render(); }).catch(() => {});
   if (!S.sel || !instances().some((i) => i.path === S.sel)) S.sel = cfg().default || instances()[0]?.path || null;
   if (S.st.building?.state === 'running') { S.build = S.st.building; S.view = 'build'; if (!S.log.length) S.log = await invoke('build_log'); }
@@ -118,6 +122,33 @@ function render() {
   const log = $('.log');
   if (log) log.scrollTop = log.scrollHeight;
   $('#btn-settings').title = t('settings'); $('#btn-min').title = t('minimize'); $('#btn-max').title = document.documentElement.classList.contains('maximized') ? t('restoreWin') : t('maximizeWin'); $('#btn-close').title = t('close');
+}
+
+// ---------- what the game needs from the system ----------
+// No Wine: a card with "Install Wine" (the system's password window, or a terminal with sudo as plan B). The launcher never
+// sees the password. It checks every few seconds and the card goes away when Wine is there.
+function depsCard() {
+  if (!S.st || S.st.runners.wine) return '';
+  const d = S.deps || { distro: { name: '', command: '' }, graphical: false, terminal: null };
+  const busy = S.depsBusy;
+  return `<div class="banner deps"><div class="dot warn">${icon('alert')}</div>
+    <div class="txt"><b>${t('wineMissing')}</b><span>${esc(t('wineMissingBody', { distro: d.distro.name || 'Linux' }))}</span>
+      ${busy ? `<span class="deps-line">${esc(S.depsLine || t('wineInstalling'))}</span>` : ''}
+      ${!busy && !d.distro.command ? `<span class="deps-line">${t('wineManual')}</span>` : ''}</div>
+    <div class="acts">
+      ${d.distro.command && d.terminal ? `<button class="btn ghost sm" data-act="wine-terminal" ${busy ? 'disabled' : ''}>${t('openTerminal')}</button>` : ''}
+      ${d.distro.command ? `<button class="btn accent-outline" data-act="wine-install" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span>' : icon('download')}${t('installWine')}</button>` : ''}
+    </div></div>`;
+}
+
+function watchWine() {
+  clearInterval(S.wineTimer);
+  let n = 0;
+  S.wineTimer = setInterval(async () => {
+    if (++n > 200) return clearInterval(S.wineTimer);
+    const st = await invoke('get_state');
+    if (st.runners.wine) { clearInterval(S.wineTimer); S.depsBusy = false; S.depsLine = ''; await refresh(); toast(t('wineReady')); }
+  }, 3000);
 }
 
 function banner() {
@@ -238,7 +269,7 @@ function mainView() {
       <button class="act" data-act="check-updates">${S.checking ? '<span class="spin"></span>' : icon('refresh')}${S.checking ? t('checking') : t('checkUpdates')}</button></div>
     ${inst ? gameSettings(inst) : ''}`;
 
-  return `<div class="page">${banner()}${hero}<div class="grid"><div class="col">${left}</div><div class="col">${right}</div></div></div>`;
+  return `<div class="page">${depsCard()}${banner()}${hero}<div class="grid"><div class="col">${left}</div><div class="col">${right}</div></div></div>`;
 }
 
 function setupView() {
@@ -248,12 +279,13 @@ function setupView() {
   const ver = w.zip ? '' : (rels.find((r) => r.tag === w.tag)?.version || '');
   if (!w.folder) invoke('suggest_folder', { version: ver }).then((f) => { if (!S.wiz.folder) { S.wiz.folder = f; render(); } });
   const srcOk = w.check?.ok;
-  const canGo = srcOk && (w.tag || w.zip) && w.folder;
+  const canGo = srcOk && (w.tag || w.zip) && w.folder && S.st.runners.wine;
   return `<div class="setup">
     <div class="hero-space" style="height:40px"></div>
     <img class="emblem" src="logo.png" alt="">
     <h1>${instances().length ? t('buildOther') : t('welcome')}</h1>
     <p class="lead">${t('welcomeBody')}</p>
+    ${depsCard()}
     <div class="step ${srcOk ? 'ok' : ''}"><div class="num">${srcOk ? icon('check') : 1}</div><div class="sb">
       <b>${t('stepFiles')}</b><span>${t('stepFilesBody')}</span>
       <div class="acts"><button class="btn" data-act="pick-source" data-kind="nup">${icon('file')}${t('pickNup')}</button>
@@ -522,7 +554,9 @@ async function vendorSheet(id) {
   let accepted = false;
   const el = sheet(`<header><h2>${title}</h2><button class="tb-btn" data-close>${icon('x')}</button></header>
     <div class="body"><p>${esc(intro)}</p>
-      ${id === 'dlss' && !S.st.runners.proton ? `<p style="color:#ffb86b">${t('dlssNeedsProton')}</p>` : ''}
+      ${id === 'dlss' && !S.st.runners.proton ? `<div class="group proton-box"><div class="field"><div class="fl"><b>${t('protonMissing')}</b><span>${t('protonMissingBody')}</span></div>
+        <button class="btn sm accent-outline" id="getproton">${icon('download')}${t('getProton')}</button></div>
+        <div class="field" id="pprog" hidden><div class="fl"><div class="bar"><i></i></div><span id="pmsg"></span></div></div></div>` : ''}
       ${has ? `<p style="color:var(--ok);font-weight:600">✓ ${t('installed')}</p>` : ''}
       <div id="lic"><div class="bar indet"><i></i></div></div>
       ${has ? '' : `<div class="check" id="acc"><div class="box">${icon('check')}</div>${esc(t('licenseAccept', { vendor: vendorName }))}</div>`}
@@ -531,6 +565,12 @@ async function vendorSheet(id) {
     <footer><span class="grow"></span><button class="btn ghost" data-close>${has ? t('ok') : t('cancel')}</button>
       ${has ? '' : `<button class="btn primary" id="vdl" disabled>${icon('download')}${t('download')}</button>`}</footer>`, 'wide');
   bindSheet();
+  $('#getproton', el)?.addEventListener('click', async () => {
+    const b = $('#getproton', el); b.disabled = true; $('#pprog', el).hidden = false;
+    S.vendor = { id: 'proton', el };
+    try { await invoke('install_proton'); S.vendor = null; await refresh(); toast(t('protonReady')); vendorSheet(id); }
+    catch (e) { S.vendor = null; b.disabled = false; toast(err(e), true); }
+  });
   try {
     const lics = await invoke('vendor_license', { id });
     if (!$('#lic', el)) return;
@@ -618,7 +658,7 @@ async function play() {
     toast(t('started', { runner: r.proton ? 'Proton' : 'Wine' }));
     S.st.running = true; render();
   } catch (e) {
-    if (String(e) === 'no-dlss') return vendorSheet('dlss');
+    if (String(e) === 'no-dlss' || String(e) === 'no-proton') return vendorSheet('dlss');
     toast(err(e), true);
   }
 }
@@ -693,6 +733,25 @@ const actions = {
     if (p) { S.wiz.folder = p.endsWith('/xc2-recomp') ? p : p; render(); }
   },
   'start-build': () => startBuild('new', null, null),
+  'wine-install': async () => {
+    const mode = S.deps?.graphical ? 'graphical' : 'terminal';
+    S.depsBusy = true; S.depsLine = mode === 'graphical' ? t('winePassword') : t('wineInTerminal'); render();
+    try {
+      await invoke('install_wine', { mode, lang: lang() });
+      if (mode === 'graphical') { S.depsLine = t('wineChecking'); render(); }
+      watchWine();
+    } catch (e) {
+      S.depsBusy = false; S.depsLine = '';
+      const code = String(e);
+      if (code === 'no-graphical' && S.deps?.terminal) return actions['wine-terminal']();
+      toast(code === 'cancelled' ? t('wineCancelled') : err(e), true); render();
+    }
+  },
+  'wine-terminal': async () => {
+    S.depsBusy = true; S.depsLine = t('wineInTerminal'); render();
+    try { await invoke('install_wine', { mode: 'terminal', lang: lang() }); watchWine(); }
+    catch (e) { S.depsBusy = false; S.depsLine = ''; toast(err(e), true); render(); }
+  },
   'cancel-build': () => invoke('cancel_build'),
   'retry-build': () => { const b = S.build; startBuild('new', b.instance, S.releases.find((r) => r.tag === S.wiz.tag) || null); },
   'build-finished': async () => { S.view = instances().length || S.build?.state === 'done' ? 'main' : 'setup'; if (S.build?.instance) S.sel = S.build.instance; S.build = null; await refresh(); },
@@ -753,10 +812,19 @@ listen('build-log', (e) => {
   const l = $('.log');
   if (l) { l.textContent = S.log.slice(-600).join('\n'); l.scrollTop = l.scrollHeight; }
 });
+listen('deps-log', (e) => {
+  const l = String(e.payload).trim();
+  if (!l) return;
+  S.depsLine = l.length > 110 ? l.slice(0, 107) + '…' : l;
+  const el = $('.deps-line'); if (el) el.textContent = S.depsLine;
+});
 listen('vendor-progress', (e) => {
   const v = S.vendor; const p = e.payload;
   if (!v || !document.body.contains(v.el)) return;
-  const bar = v.el.querySelector('#vprog .bar i'); const msg = v.el.querySelector('#vmsg');
+  const isP = p.id === 'proton';
+  const bar = v.el.querySelector(isP ? '#pprog .bar i' : '#vprog .bar i'); const msg = v.el.querySelector(isP ? '#pmsg' : '#vmsg');
+  if (!bar || !msg) return;
+  if (p.phase === 'verify' || p.phase === 'extract') { msg.textContent = p.phase === 'verify' ? t('verifying') : t('extracting'); bar.style.width = '100%'; return; }
   const f = p.total ? p.done / p.total : 0;
   bar.style.width = (f * 100).toFixed(1) + '%';
   msg.textContent = p.phase === 'extract' ? t('extracting') : t('downloading', { p: `${fmtSize(p.done)} / ${fmtSize(p.total)}` });

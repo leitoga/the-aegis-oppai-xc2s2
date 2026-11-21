@@ -36,6 +36,10 @@ dump**, keeps several installs ("instances") side by side, and starts the game t
   always after a backup of the current saves; make a backup; open the folder.
 - **Instances**: add an existing install folder, build another version, set the default, check for updates of the port and of
   the launcher (channel stable / preview); "Update" downloads the newer package over the instance and rebuilds it.
+- **Installs what the game needs**: when Wine is missing, *Install Wine* uses your distribution's package manager (pacman,
+  apt, dnf or zypper) through the system's own password window (`pkexec`), or opens a terminal with the `sudo` command as a
+  fallback — the launcher never sees the password. For DLSS without Proton it downloads the latest **GE-Proton** (SHA-512
+  checked) into Steam's compatibility tools folder, or its own when there is no Steam; no password needed.
 - Fully responsive window (720×520 to 4K) with its own title bar, maximize/restore, and a "safe drawing" switch for drivers
   where WebKit's window stays blank. Registers itself in the applications menu so the task bar knows its window.
 
@@ -62,7 +66,9 @@ Tested on CachyOS (KDE Plasma, Wayland), RTX 3070, 4K TV, with an install that h
 | Opening on Ubuntu / Kubuntu | ⚠️ built for it, not yet run on a real Ubuntu PC |
 | FPS counter showing only "FPS nn" (`controls.ini` `[fps] detail = 0`) | ⚠️ value read from the runtime, not yet seen in game |
 | Picking one controller (`SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT`) under Wine/Proton | ⚠️ not tested in game |
-| Launcher self-update | ⚠️ not tested (needs a second release) |
+| Installing Wine from the launcher (pkexec password window / terminal) | ⚠️ distribution and password-window detection tested; not yet run on a PC without Wine |
+| Downloading GE-Proton from the launcher | ⚠️ not run end to end yet |
+| Launcher self-update | ⚠️ not tested yet (v0.1.0 → v0.1.1 is the first chance) |
 | Native Linux runtime (no Wine/Proton) | ❌ not started |
 
 Reports are welcome: open an issue with your distribution, GPU and driver, and `launcher-setup.log` /
@@ -70,13 +76,16 @@ Reports are welcome: open an issue with your distribution, GPU and driver, and `
 
 ## What you need to play
 
-| | Arch / CachyOS | Ubuntu / Kubuntu |
-|---|---|---|
-| Wine (TAAU, FSR 3.1) | `sudo pacman -S wine` | `sudo apt install wine` (or WineHQ in `/opt/wine-stable`) |
-| Proton (DLSS) | `proton-cachyos` or GE-Proton | Steam + GE-Proton in `~/.steam/steam/compatibilitytools.d` |
-| Optional | `gamemode` | `gamemode` |
+Only the AppImage, a Vulkan 1.3 GPU driver and your own dump of the game (version 3.0.1). The launcher offers to install the
+rest:
 
-Plus a Vulkan 1.3 GPU driver and your own dump of the game (version 3.0.1).
+| | Installed by the launcher | By hand, if you prefer |
+|---|---|---|
+| Wine (building, TAAU, FSR 3.1) | *Install Wine* → your password in the system's window | Arch: `sudo pacman -S wine` · Ubuntu: `sudo apt install wine` |
+| Proton (DLSS only) | *NVIDIA DLSS* card → *Download GE-Proton* (~570 MB, no password) | proton-cachyos, GE-Proton, or Steam's Proton |
+| gamemode (optional) | installed together with Wine | `gamemode` package |
+
+A Wine or Proton that is already installed is used as it is.
 
 ## Using it
 
