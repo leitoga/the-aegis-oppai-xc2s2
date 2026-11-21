@@ -1,19 +1,18 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.1
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.2
 
-**Nothing to install by hand any more.** Download the AppImage, open it, and the launcher offers what is missing:
+**Fix: Set up stopped at the start with `OSError: [Errno 22] Invalid argument`** when the dump's path had a character outside
+ASCII — the official `.nup` names carry an en dash ("Xenoblade Chronicles 2 **–** Nintendo Switch 2 Edition"). The port's
+Python, running under some Wine versions, could not write that character to its log.
 
-- **Wine**: when it is not installed, *Install Wine* installs it (and gamemode) with your distribution's package manager —
-  pacman (Arch, CachyOS, Manjaro), apt (Ubuntu, Kubuntu, Mint, Debian), dnf (Fedora) or zypper (openSUSE). Your password goes
-  in the system's own password window; if there is none, a terminal opens with the `sudo` command. The launcher never sees it.
-- **GE-Proton for DLSS**: if no Proton is found, the *NVIDIA DLSS* card downloads the latest GE-Proton (about 570 MB, SHA-512
-  checked) into Steam's compatibility tools folder, or the launcher's own folder when Steam is not installed. No password.
-  Proton now also runs without Steam.
-- Already installed Wine or Proton is used as before.
+- The setup engine now runs in UTF-8 mode.
+- When the `.nup` (or dump folder) path has such characters, the launcher gives the engine a plain-named link inside the
+  instance (`source.nup`); the original file is not copied or changed.
 
-Everything from v0.1.0 is unchanged: one AppImage for every distribution, builds from your own dump, Wine/Proton with real
-DLSS, settings on the main page, saves import, English and Spanish. See the README's *Status* table for what is verified.
+If Set up stopped like this, update and press **Retry**: it continues in the same folder.
+
+Note: Set up extracts the game's files from the `.nup` into the instance, so plan about 40 GB of free space for it.
 
 ---
 
-**Español:** ya no hay que instalar nada a mano. Si falta Wine, el launcher lo instala con el gestor de paquetes de tu distro
-(escribes la contraseña en la ventana del sistema o en una terminal); para DLSS baja GE-Proton solo, sin contraseña.
+**Español:** arregla el error `OSError: [Errno 22]` al empezar a compilar cuando el nombre del `.nup` tiene un guion largo
+(«–»). Si te pasó, actualiza y aprieta **Reintentar**. La compilación necesita unos 40 GB libres.

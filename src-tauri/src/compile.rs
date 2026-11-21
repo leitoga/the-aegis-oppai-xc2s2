@@ -181,6 +181,8 @@ fn engine(ctx: &Ctx, req: &Request, inst: &Path, source: &Path, step: &str, skip
         return Err(format!("{}: not found", py.display()));
     }
     let mut c = wine_cmd(req, inst)?;
+    // UTF-8 everywhere: some Wine versions fail the console write of a character outside the code page (OSError 22)
+    c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8").env("PYTHONUNBUFFERED", "1");
     c.arg(&py)
         .arg(win(&pkg.join("engine/xc2_setup.py")))
         .args(["--repo", &win(&pkg), "--install", &win(&pkg)])
@@ -203,6 +205,23 @@ fn engine(ctx: &Ctx, req: &Request, inst: &Path, source: &Path, step: &str, skip
             ctx.set(&step_s, -1.0, s.trim().to_string());
         }
     })
+}
+
+/// The dump as the engine sees it: when its path has characters outside ASCII (the .nup names carry an en dash, "–"), a link
+/// with a plain name inside the instance (`source.nup`, or `source-dump/` for a folder) stands in for it. Nothing is copied.
+fn ascii_source(inst: &Path, source: &Path) -> Result<PathBuf, String> {
+    if source.to_string_lossy().is_ascii() {
+        return Ok(source.to_path_buf());
+    }
+    let link = inst.join(if source.is_file() { "source.nup" } else { "source-dump" });
+    if let Ok(m) = fs::symlink_metadata(&link) {
+        if !m.file_type().is_symlink() {
+            return Err(format!("{}: exists and is not a link", link.display()));
+        }
+        fs::remove_file(&link).map_err(|e| format!("{}: {e}", link.display()))?;
+    }
+    std::os::unix::fs::symlink(source, &link).map_err(|e| format!("{}: {e}", link.display()))?;
+    Ok(link)
 }
 
 fn has_fma() -> bool {
@@ -427,9 +446,13 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
         ctx.run(c, &|_| {})?;
     }
 
-    // 3. lift
+    // 3. lift (the engine gets a plain-named link when the dump's path has characters outside ASCII)
     ctx.set("lift", -1.0, "");
-    engine(ctx, req, inst, &source, "lift", "link,shaders,done")?;
+    let engine_source = ascii_source(inst, &source)?;
+    if engine_source != source {
+        ctx.log(format!("source link {} -> {}", engine_source.display(), source.display()));
+    }
+    engine(ctx, req, inst, &engine_source, "lift", "link,shaders,done")?;
 
     // 4-5. zig and the native link
     if !pkg.join("xc2_boot.exe").is_file() {
@@ -444,7 +467,7 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
 
     // 6. shaders, nxrt.ini, launch.env
     ctx.set("shaders", -1.0, "");
-    engine(ctx, req, inst, &source, "shaders", "lift,link")?;
+    engine(ctx, req, inst, &engine_source, "shaders", "lift,link")?;
 
     // 7. done
     ctx.set("done", -1.0, "");
@@ -464,6 +487,25 @@ pub fn shared() -> Arc<Shared> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn non_ascii_sources_get_a_plain_link() {
+        let d = std::env::temp_dir().join(format!("xc2l-src-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("inst")).unwrap();
+        let nup = d.join("Xenoblade Chronicles 2 – Nintendo Switch 2 Edition [3.0.1].nup");
+        fs::write(&nup, b"NUP\x01").unwrap();
+        let plain = d.join("plain.nup");
+        fs::write(&plain, b"x").unwrap();
+        assert_eq!(ascii_source(&d.join("inst"), &plain).unwrap(), plain);
+        let l = ascii_source(&d.join("inst"), &nup).unwrap();
+        assert_eq!(l, d.join("inst/source.nup"));
+        assert!(l.to_string_lossy().is_ascii());
+        assert_eq!(fs::read(&l).unwrap(), b"NUP\x01");
+        // a second run replaces the link
+        assert!(ascii_source(&d.join("inst"), &nup).is_ok());
+        let _ = fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn input_args_by_layout() {
         let d = std::env::temp_dir().join(format!("xc2l-in-{}", std::process::id()));
