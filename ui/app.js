@@ -125,19 +125,21 @@ function render() {
 }
 
 // ---------- what the game needs from the system ----------
-// No Wine: a card with "Install Wine" (the system's password window, or a terminal with sudo as plan B). The launcher never
-// sees the password. It checks every few seconds and the card goes away when Wine is there.
+// Missing or outdated Wine: require version 11+, never treat an older Wine as ready. The password stays in the system auth UI
+// or terminal, and the launcher checks the actual version every few seconds after installation.
 function depsCard() {
-  if (!S.st || S.st.runners.wine) return '';
+  if (!S.st) return '';
+  if (S.st.runners.wine11) return `<div class="banner deps ready"><div class="dot ok">${icon('check')}</div><div class="txt"><b>${t('wine11Ok')}</b><span>${esc(t('wine11OkBody', { version: S.st.runners.wine_version || '11+' }))}</span></div></div>`;
   const d = S.deps || { distro: { name: '', command: '' }, graphical: false, terminal: null };
   const busy = S.depsBusy;
+  const oldWine = !!S.st.runners.wine;
   return `<div class="banner deps"><div class="dot warn">${icon('alert')}</div>
-    <div class="txt"><b>${t('wineMissing')}</b><span>${esc(t('wineMissingBody', { distro: d.distro.name || 'Linux' }))}</span>
+    <div class="txt"><b>${t(oldWine ? 'wine11Needed' : 'wineMissing')}</b><span>${esc(t(oldWine ? 'wine11NeededBody' : 'wineMissingBody', { distro: d.distro.name || 'Linux', version: S.st.runners.wine_version || '' }))}</span>
       ${busy ? `<span class="deps-line">${esc(S.depsLine || t('wineInstalling'))}</span>` : ''}
       ${!busy && !d.distro.command ? `<span class="deps-line">${t('wineManual')}</span>` : ''}</div>
     <div class="acts">
       ${d.distro.command && d.terminal ? `<button class="btn ghost sm" data-act="wine-terminal" ${busy ? 'disabled' : ''}>${t('openTerminal')}</button>` : ''}
-      ${d.distro.command ? `<button class="btn accent-outline" data-act="wine-install" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span>' : icon('download')}${t('installWine')}</button>` : ''}
+      ${d.distro.command ? `<button class="btn accent-outline" data-act="wine-install" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span>' : icon('download')}${t('installWine11')}</button>` : ''}
     </div></div>`;
 }
 
@@ -147,7 +149,8 @@ function watchWine() {
   S.wineTimer = setInterval(async () => {
     if (++n > 200) return clearInterval(S.wineTimer);
     const st = await invoke('get_state');
-    if (st.runners.wine) { clearInterval(S.wineTimer); S.depsBusy = false; S.depsLine = ''; await refresh(); toast(t('wineReady')); }
+    if (st.runners.wine11) { clearInterval(S.wineTimer); S.depsBusy = false; S.depsLine = ''; await refresh(); toast(t('wineReady')); }
+    else if (n >= 200) { clearInterval(S.wineTimer); S.depsBusy = false; S.depsLine = ''; await refresh(); toast(t('wine11NotFound'), true); }
   }, 3000);
 }
 
@@ -279,7 +282,7 @@ function setupView() {
   const ver = w.zip ? '' : (rels.find((r) => r.tag === w.tag)?.version || '');
   if (!w.folder) invoke('suggest_folder', { version: ver }).then((f) => { if (!S.wiz.folder) { S.wiz.folder = f; render(); } });
   const srcOk = w.check?.ok;
-  const canGo = srcOk && (w.tag || w.zip) && w.folder && S.st.runners.wine;
+  const canGo = srcOk && (w.tag || w.zip) && w.folder && S.st.runners.wine11;
   return `<div class="setup">
     <div class="hero-space" style="height:40px"></div>
     <img class="emblem" src="logo.png" alt="">

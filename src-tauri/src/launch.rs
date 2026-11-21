@@ -90,6 +90,8 @@ pub fn wine(setting: &str) -> Option<PathBuf> {
 #[derive(Serialize)]
 pub struct Runners {
     pub wine: Option<String>,
+    pub wine_version: Option<String>,
+    pub wine11: bool,
     pub proton: Option<String>,
     pub protons: Vec<String>,
     pub gamemode: bool,
@@ -97,8 +99,12 @@ pub struct Runners {
 }
 
 pub fn runners(wine_setting: &str, proton_setting: &str) -> Runners {
+    let wine_path = wine(wine_setting);
+    let wine_version = wine_path.as_ref().and_then(|p| crate::deps::wine_version(&p.display().to_string()));
     Runners {
-        wine: wine(wine_setting).map(|p| p.display().to_string()),
+        wine: wine_path.map(|p| p.display().to_string()),
+        wine11: crate::deps::is_wine_11_or_newer(wine_version.as_deref()),
+        wine_version,
         proton: proton(proton_setting).map(|p| p.display().to_string()),
         protons: proton_candidates().iter().map(|p| p.display().to_string()).collect(),
         gamemode: util::which("gamemoderun").is_some(),
@@ -259,7 +265,10 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         // Proton wants the exe's absolute path
         (proton, vec!["run".into(), pkg.join(EXE).display().to_string()])
     } else {
-        (wine(wine_setting).ok_or("no-wine")?, vec![EXE.to_string()])
+        let runner = wine(wine_setting).ok_or("no-wine")?;
+        let version = crate::deps::wine_version(&runner.display().to_string());
+        if !crate::deps::is_wine_11_or_newer(version.as_deref()) { return Err("no-wine11".into()); }
+        (runner, vec![EXE.to_string()])
     };
     args.extend(game_args);
     let (program, args) = match gamemode {

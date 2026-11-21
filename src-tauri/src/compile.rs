@@ -155,6 +155,8 @@ pub fn kill(shared: &Shared, prefix: Option<&Path>) {
 
 fn wine_cmd(req: &Request, inst: &Path) -> Result<Command, String> {
     let wine = crate::launch::wine(&req.wine).ok_or("no-wine")?;
+    let version = crate::deps::wine_version(&wine.display().to_string());
+    if !crate::deps::is_wine_11_or_newer(version.as_deref()) { return Err("no-wine11".into()); }
     let mut c = host_cmd(wine);
     c.env("WINEPREFIX", inst.join("prefix")).env("WINEDEBUG", "-all").env("WINEDLLOVERRIDES", "mscoree,mshtml=");
     Ok(c)

@@ -1,18 +1,15 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.2
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.3
 
-**Fix: Set up stopped at the start with `OSError: [Errno 22] Invalid argument`** when the dump's path had a character outside
-ASCII — the official `.nup` names carry an en dash ("Xenoblade Chronicles 2 **–** Nintendo Switch 2 Edition"). The port's
-Python, running under some Wine versions, could not write that character to its log.
+**Wine 11 required:** the launcher now detects the Wine version and displays a green OK check only for Wine 11 or newer. Older Wine versions are reported as outdated, and building or launching through Wine requires version 11+.
 
-- The setup engine now runs in UTF-8 mode.
-- When the `.nup` (or dump folder) path has such characters, the launcher gives the engine a plain-named link inside the
-  instance (`source.nup`); the original file is not copied or changed.
-
-If Set up stopped like this, update and press **Retry**: it continues in the same folder.
-
-Note: Set up extracts the game's files from the `.nup` into the instance, so plan about 40 GB of free space for it.
+- Ubuntu-based systems install WineHQ Stable from WineHQ's official APT repository, including 32-bit support required by Wine.
+- CachyOS and Arch install or update Wine through pacman.
+- The launcher verifies the installed executable version after installation.
 
 ---
 
-**Español:** arregla el error `OSError: [Errno 22]` al empezar a compilar cuando el nombre del `.nup` tiene un guion largo
-(«–»). Si te pasó, actualiza y aprieta **Reintentar**. La compilación necesita unos 40 GB libres.
+**Español:** ahora el launcher detecta la versión de Wine y muestra el check verde solo con Wine 11 o posterior. Las versiones anteriores aparecen como desactualizadas, y compilar o iniciar con Wine requiere la versión 11 o superior.
+
+- En Ubuntu y derivados instala WineHQ Stable desde el repositorio APT oficial de WineHQ, con soporte de 32 bits.
+- En CachyOS y Arch instala o actualiza Wine con pacman.
+- El launcher comprueba la versión del ejecutable después de instalarlo.
