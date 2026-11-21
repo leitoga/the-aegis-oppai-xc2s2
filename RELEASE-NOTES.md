@@ -1,4 +1,4 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.4
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.3
 
 **Wine 11 required:** the launcher now detects the Wine version and displays a green OK check only for Wine 11 or newer. Older Wine versions are reported as outdated, and building or launching through Wine requires version 11+.
 
