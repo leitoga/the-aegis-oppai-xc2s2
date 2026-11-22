@@ -203,7 +203,9 @@ pub struct Info {
 pub fn info(inst: &Path) -> Info {
     let m = read_marker(inst);
     let o = read_options(inst);
-    let version = package_version(inst).unwrap_or_default();
+    // the version the launcher noted when it built or updated the install wins: a package does not always carry its notes
+    // (0.2.0 has no RELEASE-NOTES.md, so the 0.1.4 file stayed and named the wrong version)
+    let version = if !m.tag.trim().is_empty() { m.tag.trim().trim_start_matches('v').to_string() } else { package_version(inst).unwrap_or_default() };
     let built = if m.built > 0 { Some(m.built) } else { mtime(&pkg(inst).join("xc2_boot.exe")) };
     Info {
         path: inst.display().to_string(),
