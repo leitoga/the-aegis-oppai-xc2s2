@@ -271,6 +271,30 @@ pub fn list_saves(inst: &Path) -> Saves {
     Saves { folder: dir.display().to_string(), latest: files.iter().filter_map(|f| f.modified).max(), files, backups }
 }
 
+/// The newest `<uid>.respaldo-<seconds>` folder copied back over the account folder (its files only; nothing else is removed).
+pub fn restore_latest_backup(inst: &Path) -> Result<PathBuf, String> {
+    let dir = account_dir(inst);
+    let parent = dir.parent().ok_or("no-backup")?;
+    let prefix = format!("{SAVE_UID}.respaldo-");
+    let newest = fs::read_dir(parent)
+        .map_err(|_| "no-backup".to_string())?
+        .flatten()
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.strip_prefix(&prefix).and_then(|t| t.parse::<u64>().ok()).map(|t| (t, e.path()))
+        })
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, p)| p)
+        .ok_or("no-backup")?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    for e in fs::read_dir(&newest).map_err(|e| e.to_string())?.flatten() {
+        if e.path().is_file() {
+            fs::copy(e.path(), dir.join(e.file_name())).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(newest)
+}
+
 /// A copy of the account folder next to it, `<uid>.respaldo-<seconds>`, made before anything is written into it.
 pub fn backup_saves(inst: &Path) -> Result<Option<PathBuf>, String> {
     let dir = account_dir(inst);

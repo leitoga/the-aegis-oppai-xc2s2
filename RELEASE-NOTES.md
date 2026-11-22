@@ -1,10 +1,12 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.13
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.14
 
-- **Controllers with DLSS (Proton):** Nintendo and PlayStation controllers (Switch Pro, DualShock 4, …) were sometimes not
-  seen by the game at all with DLSS, while they worked with TAAU/FSR. Proton now reads every controller the plain way (as
-  with Wine), and a hidden-controllers list inherited from Steam no longer reaches the game.
+- **Edit save** (in *Manage saves*): money and Common / Rare / Legendary Core Crystals of the base game's save, up to the
+  game's own limits (99,999,999 G, 99 crystals). A backup of the whole save folder is made before every change, and
+  *Go back to the latest backup* restores it. Editing is refused while the game is open.
+  The save layout comes from the community editor XC2SaveNETThingy (its 3.0 fork); the Switch 2 Edition keeps that format.
+- Controllers with DLSS (Proton) from v0.1.13 are kept.
 
 ---
 
-**Español:** con DLSS (Proton) algunos mandos de Nintendo y PlayStation no llegaban al juego aunque con TAAU/FSR andaban.
-Ahora Proton lee todos los mandos por el camino normal, igual que Wine.
+**Español:** en *Administrar partidas* hay una sección nueva, *Editar partida*: dinero y cristales primordiales comunes,
+especiales y legendarios. Antes de cada cambio se hace una copia de seguridad y se puede volver a ella con un botón.

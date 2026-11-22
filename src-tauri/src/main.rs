@@ -11,6 +11,7 @@ mod kwin;
 mod launch;
 mod net;
 mod nup;
+mod savedit;
 mod util;
 
 use serde::{Deserialize, Serialize};
@@ -682,6 +683,44 @@ async fn backup_saves(path: String) -> Result<Option<String>, String> {
     Ok(instance::backup_saves(&known(&c, &path)?)?.map(|b| b.display().to_string()))
 }
 
+#[tauri::command]
+async fn save_values(path: String) -> Result<savedit::Values, String> {
+    let c = load();
+    savedit::read(&instance::account_dir(&known(&c, &path)?))
+}
+
+#[derive(Serialize)]
+struct Edited {
+    values: savedit::Values,
+    backup: Option<String>,
+}
+
+/// Money and core crystals into the save, after a backup of the whole account folder; never while the game runs (it keeps
+/// the save in memory and would write its own over it).
+#[tauri::command]
+async fn set_save_values(path: String, values: savedit::Values) -> Result<Edited, String> {
+    let c = load();
+    let inst = known(&c, &path)?;
+    if util::process_running(launch::EXE) {
+        return Err("running".into());
+    }
+    let dir = instance::account_dir(&inst);
+    savedit::read(&dir)?;
+    let backup = instance::backup_saves(&inst)?.map(|b| b.display().to_string());
+    Ok(Edited { values: savedit::write(&dir, &values)?, backup })
+}
+
+/// Puts the newest backup back in place of the saves.
+#[tauri::command]
+async fn restore_backup(path: String) -> Result<String, String> {
+    let c = load();
+    let inst = known(&c, &path)?;
+    if util::process_running(launch::EXE) {
+        return Err("running".into());
+    }
+    instance::restore_latest_backup(&inst).map(|b| b.display().to_string())
+}
+
 // ---- files and dialogs ----
 
 #[tauri::command]
@@ -783,6 +822,7 @@ fn main() {
             get_state, set_config, add_instance, forget_instance, set_default, instance_size, cover, set_cover, read_options,
             write_options, play, game_running, stop_game, releases, update_launcher, start_build, cancel_build, build_log,
             suggest_folder, check_source, vendor_license, install_vendor, cancel_vendor, saves, import_saves, backup_saves,
+            save_values, set_save_values, restore_backup,
             open_path, open_url, pick, hardware, install_wine, install_proton,
         ])
         .run(tauri::generate_context!())

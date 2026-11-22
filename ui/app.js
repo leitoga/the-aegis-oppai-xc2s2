@@ -576,6 +576,13 @@ async function vendorSheet(id) {
   });
 }
 
+// money and the three stackable core crystals of the save (null: still reading)
+function editFields(v) {
+  const rows = [['money', 'money', 99999999], ['common', 'crystalCommon', 99], ['rare', 'crystalRare', 99], ['legendary', 'crystalLegendary', 99]];
+  return rows.map(([k, label, max]) => `<div class="field"><div class="fl"><b>${t(label)}</b><span>${t('upTo', { n: max.toLocaleString() })}</span></div>
+    <input class="num" type="number" min="0" max="${max}" step="1" data-k="${k}" value="${v ? v[k] : ''}" ${v ? '' : 'disabled'}></div>`).join('');
+}
+
 async function savesSheet() {
   const inst = current();
   if (!inst) return;
@@ -593,8 +600,33 @@ async function savesSheet() {
         <div class="field"><div class="fl"><b>${t('backup')}</b></div><button class="btn sm" data-s="backup">${icon('save')}${t('backup')}</button></div>
         <div class="field"><div class="fl"><b>${t('openFolder')}</b></div><button class="btn sm" data-s="open">${icon('ext')}${t('openFolder')}</button></div>
       </div>
+      <h3 style="margin:22px 0 6px">${t('editTitle')}</h3><p>${t('editIntro')}</p>
+      <div class="group" data-edit>${editFields(null)}</div>
+      <div class="acts" style="margin-top:12px;justify-content:flex-end;gap:10px">
+        ${s.backups ? `<button class="btn sm" data-s="restore">${icon('ext')}${t('restoreBackup')}</button>` : ''}
+        <button class="btn sm primary" data-s="write" disabled>${icon('save')}${t('saveChanges')}</button>
+      </div>
     </div>`, 'wide', 'saves');
   bindSheet();
+  const box = el.querySelector('[data-edit]');
+  const write = el.querySelector('[data-s=write]');
+  invoke('save_values', { path: inst.path }).then((v) => { box.innerHTML = editFields(v); write.disabled = false; })
+    .catch((e) => { box.innerHTML = `<div class="field"><div class="fl"><span>${esc(err(e))}</span></div></div>`; });
+  write.addEventListener('click', async () => {
+    if (S.st.running || (await invoke('game_running'))) return toast(t('closeGameEdit'), true);
+    const v = {};
+    box.querySelectorAll('input.num').forEach((i) => { v[i.dataset.k] = Math.max(0, Math.min(+i.max, Math.floor(+i.value || 0))); });
+    try { const r = await invoke('set_save_values', { path: inst.path, values: v }); toast(t('edited', { b: r.backup ? base(r.backup) : '-' })); }
+    catch (e) { toast(err(e), true); }
+    await refresh(); savesSheet();
+  });
+  el.querySelector('[data-s=restore]')?.addEventListener('click', async () => {
+    if (S.st.running || (await invoke('game_running'))) return toast(t('closeGameEdit'), true);
+    if (!(await confirmBox(t('confirmRestore'), t('confirm')))) return savesSheet();
+    try { const b = await invoke('restore_backup', { path: inst.path }); toast(t('restored', { b: base(b) })); }
+    catch (e) { toast(err(e), true); }
+    await refresh(); savesSheet();
+  });
   const doImport = async (from, name) => {
     if (S.st.running) return toast(t('closeGameFirst'), true);
     if (!(await confirmBox(t('confirmImport', { emu: name }), t('confirm')))) return savesSheet();
