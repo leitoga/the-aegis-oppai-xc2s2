@@ -268,6 +268,9 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         // user may not open /dev/hidraw* (Flatpak Steam, no steam-devices rules) it drops them: the game saw no pad at all.
         push(&mut env, "PROTON_DISABLE_HIDRAW", "1".into());
         push(&mut env, "PROTON_NO_STEAMINPUT", "1".into());
+        // SDL2 (sdl2-compat) hands Nintendo pads over by the printed letter, moved to Xbox places (A at the bottom): the game,
+        // which reads the face buttons by position, then had A and B (X and Y) swapped. By position, as the game wants.
+        push(&mut env, "SDL_GAMECONTROLLER_USE_BUTTON_LABELS", "0".into());
         // Proton's controller bus loads SDL2, which on current distributions is sdl2-compat over libSDL3.so.0; where that is
         // missing it "Failed loading SDL3 library." and the game saw no controller: the launcher's own copy is put first
         // (put first even when the system has one: sdl2-compat there failed to find it all the same)
