@@ -241,6 +241,8 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         push(&mut env, "NXRT_DLSS_SHARPNESS", o.NITIDEZ.clone());
         push(&mut env, "NXRT_UPSCALE_FSR_DLL", format!("{w}\\upscalers\\fsr\\amd_fidelityfx_loader_vk.dll"));
     }
+    // the pad keeps working when the game's window does not have the focus (Proton's console window can take it)
+    push(&mut env, "SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1".into());
     if let Some(only) = crate::hw::sdl_only(&o.MANDO) {
         // SDL inside the game (under Wine/Proton) then opens only that controller
         push(&mut env, "SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT", only);

@@ -1,18 +1,16 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.7
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.8
 
-- **The game no longer closes by itself after ~17 seconds.** It was started from a short-lived helper thread, and Proton
-  (through the Steam runtime) ends the game when the thread that started it goes away. It now starts from a thread that lives
-  as long as the game.
-- **Loading card inside the game**: while the game's window is still black (the GPU driver prepares its pipelines; the first
-  time takes longer), a dark card in the middle of the screen shows *Preparing the graphics*, a percentage and a bar that
-  fills up. It is drawn by MangoHud inside the game's image, so no window can cover it; it goes away when the game draws.
-- **FPS counter**: just the number, in a small dark rounded box, in the corner you choose. The port's own counter cannot be
-  used (the port turns its overlay off for this game), so it is drawn by MangoHud; if MangoHud is not installed, the launcher
-  downloads the official release once (SHA-256 checked, no password). A `DISABLE_MANGOHUD` in your session no longer hides it.
-- **Proton's console window** is minimized once the game draws (KDE Plasma), and the game gets the focus.
+- **Controller not working in game** although the launcher listed it: with TAAU or FSR 3.1 the game runs through the
+  launcher's Wine, which reads controllers through the system's SDL2 library — not always installed on Ubuntu/Kubuntu. Wine's
+  own Linux paths for controllers (evdev and hidraw) are now turned on in the game's prefix, so it no longer depends on it.
+  An existing install gets the change by itself on the next Play.
+- The controller keeps working when the game's window does not have the focus (Proton's console window can take it).
+- The update check now also works in builds made locally.
+
+If a specific controller is chosen in *Controls* and the game does not respond, set it back to *All (automatic)*.
 
 ---
 
-**Español:** el juego ya no se cierra solo a los ~17 segundos; durante la pantalla negra se ve una tarjeta de carga con
-porcentaje y barra (dibujada por MangoHud adentro del juego); el contador de FPS muestra solo el número en la esquina que
-elijas (si no tienes MangoHud, el lanzador lo baja solo); la consola de Proton se minimiza cuando el juego arranca.
+**Español:** arregla el mando que el lanzador detecta pero el juego no (con TAAU o FSR 3.1, Wine ahora lee los mandos
+directo de Linux, sin depender de SDL2); el mando sigue andando aunque la ventana del juego no tenga el foco. Si elegiste un
+mando en Controles y no responde, vuelve a «Todos».

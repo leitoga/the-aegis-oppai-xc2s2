@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "The Aegis Oppai",
   "mainBinaryName": "aegis-oppai",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "identifier": "io.github.aegisoppai.xc2s2",
   "build": {
     "frontendDist": "../ui"

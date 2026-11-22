@@ -58,7 +58,8 @@ pub const WINE_OVERRIDES: &str = "mshtml=;winemenubuilder.exe=d;winedbg.exe=d";
 /// window is turned off in it. Remembers the Wine it was prepared with, so this runs again only when that changes.
 pub fn prepare_prefix(wine: &Path, prefix: &Path) -> Result<(), String> {
     let stamp = prefix.join(".aegis-wine");
-    let id = wine.display().to_string();
+    // the stamp names the settings too: a prefix prepared before the controller settings is prepared again
+    let id = format!("{}|pads-1", wine.display());
     if prefix.join("system.reg").is_file() && fs::read_to_string(&stamp).map(|s| s == id).unwrap_or(false) {
         return Ok(());
     }
@@ -80,10 +81,18 @@ pub fn prepare_prefix(wine: &Path, prefix: &Path) -> Result<(), String> {
     if !st.success() {
         return Err(format!("wineboot: exit {}", st.code().unwrap_or(-1)));
     }
-    let mut c = host_cmd(wine);
-    c.args(["reg", "add", "HKCU\\Software\\Wine\\WineDbg", "/v", "ShowCrashDialog", "/t", "REG_DWORD", "/d", "0", "/f"]);
-    quiet(&mut c);
-    let _ = c.status();
+    let reg = |args: &[&str]| {
+        let mut c = host_cmd(wine);
+        c.arg("reg").arg("add").args(args).arg("/f");
+        quiet(&mut c);
+        let _ = c.status();
+    };
+    reg(&["HKCU\\Software\\Wine\\WineDbg", "/v", "ShowCrashDialog", "/t", "REG_DWORD", "/d", "0"]);
+    // Controllers: Wine reads them through the host's SDL2 library, which Ubuntu/Kubuntu do not always have; then the game
+    // saw no pad at all although the launcher listed it. Wine's own Linux paths (evdev and hidraw) are turned on as well.
+    let bus = "HKLM\\System\\CurrentControlSet\\Services\\winebus";
+    reg(&[bus, "/v", "DisableInput", "/t", "REG_DWORD", "/d", "0"]);
+    reg(&[bus, "/v", "DisableHidraw", "/t", "REG_DWORD", "/d", "0"]);
     // let the wineserver of this headless session end before the next command starts one with a display
     let mut c = host_cmd(wine.with_file_name("wineserver"));
     c.arg("-w");
