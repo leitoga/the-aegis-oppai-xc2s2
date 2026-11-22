@@ -15,10 +15,11 @@ pub const GAME_REPO: &str = match option_env!("XC2L_GAME_REPO") {
     Some(r) => r,
     None => "weile10000/xc2-ns2-recomp",
 };
-/// This launcher's repository, for its own updates. Empty: no launcher update check.
+/// This launcher's repository, for its own updates (XC2L_REPO at build time; a fork sets its own).
 pub const LAUNCHER_REPO: &str = match option_env!("XC2L_REPO") {
-    Some(r) => r,
-    None => "",
+    Some(r) if !r.is_empty() => r,
+    // a local build checks the same repository as the released ones
+    _ => "leitoga/the-aegis-oppai-xc2s2",
 };
 
 pub const STREAMLINE_TAG: &str = "v2.14.16";
