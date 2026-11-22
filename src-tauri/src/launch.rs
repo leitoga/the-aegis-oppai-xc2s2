@@ -268,6 +268,16 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         // user may not open /dev/hidraw* (Flatpak Steam, no steam-devices rules) it drops them: the game saw no pad at all.
         push(&mut env, "PROTON_DISABLE_HIDRAW", "1".into());
         push(&mut env, "PROTON_NO_STEAMINPUT", "1".into());
+        // Proton's controller bus loads SDL2, which on current distributions is sdl2-compat over libSDL3.so.0; where that is
+        // missing it "Failed loading SDL3 library." and the game saw no controller: the launcher's own copy is put first
+        // (put first even when the system has one: sdl2-compat there failed to find it all the same)
+        {
+            if let Some(dir) = crate::deps::own_sdl3() {
+                let prev = crate::util::host_var("LD_LIBRARY_PATH").unwrap_or_default();
+                let path = if prev.is_empty() { dir.display().to_string() } else { format!("{}:{prev}", dir.display()) };
+                push(&mut env, "LD_LIBRARY_PATH", path);
+            }
+        }
         // Proton wants the exe's absolute path
         (proton, vec!["run".into(), pkg.join(EXE).display().to_string()])
     } else {

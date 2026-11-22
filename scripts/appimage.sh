@@ -13,6 +13,7 @@ cd "$(dirname "$0")/.."
 ROOT=$PWD
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
 [ -f src-tauri/icons/icon.png ] || python3 -I icon/make_icon.py
+[ -f build/sdl3/libSDL3.so.0 ] || echo "aviso: sin build/sdl3/libSDL3.so.0 (scripts/build-sdl3.sh): Proton sin SDL3 del sistema no verá mandos"
 cd src-tauri
 # NO_STRIP: linuxdeploy's own strip is too old for the libraries of current distributions
 NO_STRIP=true APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build --bundles appimage "$@"

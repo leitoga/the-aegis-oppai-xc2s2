@@ -276,3 +276,26 @@ mod tests {
         assert!(!WINE_OVERRIDES.contains("mscoree"), "the .NET tools need mscoree when they run");
     }
 }
+
+// ---- SDL3 for Proton ----
+
+#[cfg(bundled_sdl3)]
+static SDL3: &[u8] = include_bytes!(env!("XC2L_SDL3"));
+#[cfg(not(bundled_sdl3))]
+static SDL3: &[u8] = &[];
+
+/// The folder holding the launcher's own libSDL3.so.0 (written out the first time), when this build carries one.
+pub fn own_sdl3() -> Option<PathBuf> {
+    if SDL3.is_empty() {
+        return None;
+    }
+    let dir = util::data_dir().join(format!("sdl3-{}", SDL3.len()));
+    let lib = dir.join("libSDL3.so.0");
+    if lib.metadata().map(|m| m.len() as usize) .ok() != Some(SDL3.len()) {
+        fs::create_dir_all(&dir).ok()?;
+        let tmp = dir.join("libSDL3.so.0.nuevo");
+        fs::write(&tmp, SDL3).ok()?;
+        fs::rename(&tmp, &lib).ok()?;
+    }
+    Some(dir)
+}

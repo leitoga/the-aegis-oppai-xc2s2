@@ -25,7 +25,7 @@ exec nice -n 15 ionice -c3 "$ENGINE" run --rm -i \
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ca-certificates curl build-essential pkg-config file xz-utils python3 python3-pil \
-    libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libssl-dev >/dev/null
+    libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libssl-dev cmake libudev-dev >/dev/null
 if [ ! -x /root/.cargo/bin/cargo ]; then
     curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
 fi
@@ -33,6 +33,8 @@ export PATH=/root/.cargo/bin:$PATH
 rustup default stable >/dev/null
 [ -x /root/.cargo/bin/cargo-tauri ] || cargo install tauri-cli --version "^2" --locked
 cd /src
+rm -rf build/sdl3
+scripts/build-sdl3.sh
 (cd src-tauri && cargo test --quiet)
 scripts/appimage.sh
 ldd --version | sed -n 1p

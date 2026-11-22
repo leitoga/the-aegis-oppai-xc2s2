@@ -28,7 +28,9 @@ struct Pouch {
 const CRYSTAL_POUCH: Pouch = Pouch { at: ITEM_BOX + 0xC990, slots: 200, kind: 11, counter: 11 };
 /// key items (ids stored minus 25000)
 const KEY_POUCH: Pouch = Pouch { at: ITEM_BOX + 0x5460, slots: 500, kind: 6, counter: 4 };
+#[cfg(test)]
 const CRYSTALS: usize = ITEM_BOX + 0xC990;
+#[cfg(test)]
 const CRYSTAL_SERIAL: usize = ITEM_BOX + 0x122A0 + 11 * 4;
 pub const COMMON: u32 = 11;
 pub const RARE: u32 = 12;

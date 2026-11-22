@@ -52,7 +52,7 @@ fn appdir() -> Option<String> {
 }
 
 /// A host variable with the AppImage's own entries taken out (PATH-like lists keep the host's part).
-fn host_var(key: &str) -> Option<String> {
+pub fn host_var(key: &str) -> Option<String> {
     let v = std::env::var(key).ok()?;
     let Some(app) = appdir() else { return Some(v) };
     if !v.contains(&app) {
