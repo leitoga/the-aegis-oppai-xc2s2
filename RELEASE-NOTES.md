@@ -1,4 +1,4 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.16
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.17
 
 - **Controllers with DLSS (Proton) on systems without SDL3:** Proton reads controllers through SDL2, which current
   distributions provide as *sdl2-compat* on top of SDL3. Where SDL3 itself was missing, Proton printed

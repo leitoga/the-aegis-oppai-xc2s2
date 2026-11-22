@@ -3,7 +3,8 @@
 # it to Proton when the system has none: Proton's controller bus loads the system's libSDL3.so.0, and without it the game sees
 # no controller at all with DLSS ("Failed loading SDL3 library.").
 #
-# Built where the AppImage is built (Ubuntu 22.04), so it needs nothing newer than glibc 2.35.
+# Built where the AppImage is built (Ubuntu 22.04), so it needs nothing newer than glibc 2.35. Only what a controller bus
+# needs (joystick, gamepad, haptic, sensors, events): no video or audio, so it builds anywhere without their headers.
 # Needs: cmake, a C compiler, libudev-dev (controllers through udev), curl.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -26,7 +27,8 @@ rm -rf "$W/src" "$W/out"
 mkdir -p "$W/src"
 tar -xzf "$TAR" -C "$W/src" --strip-components=1
 cmake -S "$W/src" -B "$W/out" -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TESTS=OFF \
-    -DSDL_EXAMPLES=OFF -DSDL_INSTALL=OFF -DSDL_TEST_LIBRARY=OFF >/dev/null
+    -DSDL_EXAMPLES=OFF -DSDL_INSTALL=OFF -DSDL_TEST_LIBRARY=OFF \
+    -DSDL_UNIX_CONSOLE_BUILD=ON -DSDL_VIDEO=OFF -DSDL_RENDER=OFF -DSDL_GPU=OFF -DSDL_CAMERA=OFF -DSDL_AUDIO=OFF >/dev/null
 cmake --build "$W/out" -j "${JOBS:-$(nproc)}" >/dev/null
 cp -L "$W/out/libSDL3.so.0" "$OUT"
 strip --strip-unneeded "$OUT" 2>/dev/null || true
