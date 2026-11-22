@@ -298,6 +298,23 @@ pub fn repair_links(inst: &Path) {
     native_links(&|_| {}, &instance::pkg(inst), &input, &inst.join("dump/dlc"));
 }
 
+/// The dump an installed instance already runs from: pkg/exefs (a link or a folder) and pkg/romfs resolved; the folder that
+/// holds both is the dump. An unpacked .nup in <instance>/dump counts too.
+fn installed_dump(inst: &Path) -> Option<PathBuf> {
+    let pkg = instance::pkg(inst);
+    let exefs = fs::canonicalize(pkg.join("exefs")).ok()?;
+    let romfs = fs::canonicalize(pkg.join("romfs")).ok()?;
+    if !exefs.join("main").is_file() || !romfs.join("bf2.ard").is_file() {
+        return pick_dump(&inst.join("dump")).ok();
+    }
+    let parent = exefs.parent()?.to_path_buf();
+    if romfs.parent() == Some(parent.as_path()) && parent != pkg {
+        Some(parent)
+    } else {
+        pick_dump(&inst.join("dump")).ok()
+    }
+}
+
 /// The folder of an unpacked .nup the game runs from: the newest update that has both exefs/main and romfs/bf2.ard, else
 /// the base game.
 fn pick_dump(out: &Path) -> Result<PathBuf, String> {
@@ -472,6 +489,16 @@ fn copy_cover(source: &Path, inst: &Path) {
 pub fn run(ctx: &Ctx, req: &Request) -> Progress {
     let inst = PathBuf::from(&req.instance);
     let res = run_inner(ctx, req, &inst);
+    let pkg = instance::pkg(&inst);
+    let kept = pkg.join("xc2_boot.exe.before-update");
+    if kept.is_file() {
+        if res.is_ok() {
+            let _ = fs::remove_file(&kept);
+        } else if !pkg.join("xc2_boot.exe").is_file() {
+            let _ = fs::rename(&kept, pkg.join("xc2_boot.exe"));
+            ctx.log("the update stopped: the previous xc2_boot.exe was put back");
+        }
+    }
     let mut p = ctx.shared.progress.lock().unwrap().clone();
     p.instance = req.instance.clone();
     match res {
@@ -502,7 +529,15 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
     fs::create_dir_all(pkg.join("setup")).map_err(|e| format!("{}: {e}", pkg.display()))?;
     *ctx.log_file.lock().unwrap() = fs::OpenOptions::new().create(true).append(true).open(inst.join("launcher-setup.log")).ok();
     let mut marker = instance::read_marker(inst);
-    let source = if req.source.trim().is_empty() { PathBuf::from(&marker.source) } else { PathBuf::from(req.source.trim()) };
+    let mut source = if req.source.trim().is_empty() { PathBuf::from(&marker.source) } else { PathBuf::from(req.source.trim()) };
+    if source.as_os_str().is_empty() || !source.exists() {
+        // an install added as a folder (made by hand, or before the launcher noted its dump): the dump is where its game
+        // files already are
+        if let Some(found) = installed_dump(inst) {
+            ctx.log(format!("source (from the installed game files) {}", found.display()));
+            source = found;
+        }
+    }
     if !source.exists() {
         return Err(format!("source: {}", source.display()));
     }
@@ -541,7 +576,8 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
         }
         if req.mode == "update" {
             // a new runtime: the exe is linked again (its objects are kept when their source did not change)
-            let _ = fs::remove_file(pkg.join("xc2_boot.exe"));
+            // the working exe is kept aside: if the update stops, it is put back and the game still starts
+            let _ = fs::rename(pkg.join("xc2_boot.exe"), pkg.join("xc2_boot.exe.before-update"));
         }
     }
     marker.tag = wanted.map(|v| format!("v{v}")).or_else(|| instance::package_version(inst).map(|v| format!("v{v}"))).unwrap_or_default();
