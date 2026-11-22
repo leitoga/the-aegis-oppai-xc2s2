@@ -132,25 +132,26 @@ function depsCard() {
     <div class="acts"><button class="btn accent-outline" data-act="wine-install" ${p ? 'disabled' : ''}>${p ? '<span class="spin"></span>' : icon('download')}${t('installWine')}</button></div></div>`;
 }
 
+// One notice for everything there is to update, only when there is something: the launcher (the program) and/or the game
+// (the port's package of the selected install), each named for what it is and what it takes.
 function banner() {
   const inst = current();
   const cfgv = cfg();
-  if (S.launcherRel && cfgv.dismissed !== 'L' + S.launcherRel.version) {
-    return `<div class="banner"><div class="dot">${icon('up')}</div>
-      <div class="txt"><b>${t('newLauncher')}</b><span>${esc(t('newLauncherBody', { new: S.launcherRel.version, cur: S.st.version }))}</span></div>
-      <div class="acts"><button class="btn ghost sm" data-act="notes" data-which="launcher">${t('details')}</button>
-      <button class="btn ghost sm" data-act="dismiss" data-which="L${esc(S.launcherRel.version)}">${t('later')}</button>
-      <button class="btn accent-outline" data-act="update-launcher">${t('updateLauncher')}</button></div></div>`;
-  }
+  const lr = S.launcherRel && cfgv.dismissed !== 'L' + S.launcherRel.version ? S.launcherRel : null;
   const up = updateFor(inst);
-  if (up && cfgv.dismissed !== up.tag) {
-    return `<div class="banner"><div class="dot">${icon('up')}</div>
-      <div class="txt"><b>${t('newRelease')}</b><span>${esc(t('newReleaseBody', { new: up.tag, cur: inst.tag || inst.version }))}</span></div>
-      <div class="acts"><button class="btn ghost sm" data-act="open-url" data-url="${esc(up.url)}">${t('details')}</button>
-      <button class="btn ghost sm" data-act="notes" data-which="${esc(up.tag)}">${t('whatsNew')}</button>
-      <button class="btn accent-outline" data-act="update">${t('update')}</button></div></div>`;
-  }
-  return '';
+  const gr = up && cfgv.dismissed !== up.tag ? up : null;
+  if (!lr && !gr) return '';
+  const row = (what, from, to, hint, notes, act, dismiss) => `<div class="up-row">
+      <div class="txt"><b>${what} <span class="ver">${esc(from)} → ${esc(to)}</span></b><span>${hint}</span></div>
+      <div class="acts">${notes}<button class="btn ghost sm" data-act="dismiss" data-which="${esc(dismiss)}">${t('later')}</button>
+      <button class="btn accent-outline" data-act="${act}">${t('update')}</button></div></div>`;
+  return `<div class="banner updates"><div class="dot">${icon('up')}</div><div class="up-list">
+    <b class="up-title">${t('updatesTitle')}</b>
+    ${lr ? row(t('rowLauncher'), 'v' + S.st.version, 'v' + lr.version, t('hintLauncher') + (gr ? ' ' + t('updateFirst') : ''),
+      `<button class="btn ghost sm" data-act="notes" data-which="launcher">${t('whatsNew')}</button>`, 'update-launcher', 'L' + lr.version) : ''}
+    ${gr ? row(t('rowGame'), inst.tag || inst.version, gr.tag, t('hintGame'),
+      `<button class="btn ghost sm" data-act="notes" data-which="${esc(gr.tag)}">${t('whatsNew')}</button>`, 'update', gr.tag) : ''}
+  </div></div>`;
 }
 
 function instTitle(i) { return `${i.tag || (i.version ? 'v' + i.version : '?')} · ${esc(base(i.path))}`; }
@@ -177,8 +178,7 @@ function mainView() {
       <img class="emblem" src="logo.png" alt="">
       <h1>${t('gameTitle')}</h1>
       <div class="game-sub">${t('gameSub', { version: esc(inst?.tag || '') })}</div>
-      <div class="release-pill">${up ? `${icon('up')}<span>${esc(t('releaseOut', { name: up.tag }))}</span><span class="link" data-act="notes" data-which="${esc(up.tag)}">${t('whatsNew')}</span>`
-        : latest ? `<span class="muted">${esc(latest.tag)} · ${esc(fmtDate(Date.parse(latest.date) / 1000))}</span><span class="link" data-act="notes" data-which="${esc(latest.tag)}">${t('whatsNew')}</span>` : ''}</div>
+      <div class="release-pill">${inst && !up && latest ? `<span class="muted">${esc(latest.tag)} · ${esc(fmtDate(Date.parse(latest.date) / 1000))}</span><span class="link" data-act="notes" data-which="${esc(latest.tag)}">${t('whatsNew')}</span>` : ''}</div>
     </div>`;
 
   const left = !inst ? '' : `
@@ -187,16 +187,16 @@ function mainView() {
       <option value="estable" ${c.channel !== 'preliminar' ? 'selected' : ''}>${t('stable')}</option>
       <option value="preliminar" ${c.channel === 'preliminar' ? 'selected' : ''}>${t('preview')}</option>
     </select></div>
-    <div class="label">${t('version')} ${up ? `<span class="badge accent">${t('updateAvailable')}</span>` : ''}</div>
+    <div class="label">${t('version')}</div>
     <div class="select"><select data-change="select-instance">
       ${instances().map((i) => `<option value="${esc(i.path)}" ${i.path === inst.path ? 'selected' : ''}>${i.path === c.default ? '✓ ' : ''}${instTitle(i)}</option>`).join('')}
     </select></div>
-    <div class="play-row">
+    <div class="play-row ${up && inst.ready ? '' : 'single'}">
       ${inst.ready
         ? (running ? `<button class="btn primary big" data-act="stop">${icon('stop')}${t('stop')}</button>`
                    : `<button class="btn primary big" data-act="play">${icon('play')}${t('play')}</button>`)
         : `<button class="btn primary big" data-act="continue">${icon('hammer')}${t('continueSetup')}</button>`}
-      <button class="btn big emerald" data-act="update" ${up ? "" : "disabled"} title="${up ? '' : esc(t('upToDate'))}">${icon('up')}${t('update')}</button>
+      ${up && inst.ready ? `<button class="btn big emerald" data-act="update">${icon('up')}${t('updateGame')}</button>` : ''}
     </div>
     <div class="note">${inst.ready ? `${isDefault ? t('defaultNote') : `${t('notDefaultNote')} <span class="link" data-act="make-default" data-path="${esc(inst.path)}">${t('makeDefault')}</span>.`}
       ${inst.built ? t('builtOn', { date: fmtDate(inst.built) }) + ', ' : ''}${esc(features(inst))}.` : t('notReady')}</div>
