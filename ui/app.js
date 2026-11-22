@@ -693,7 +693,15 @@ const actions = {
   notes: (d) => notesSheet(d.which),
   dismiss: async (d) => { await invoke('set_config', { patch: { dismissed: d.which } }); refresh(); },
   'open-url': (d) => openUrl(d.url),
-  'update-launcher': async () => { try { await invoke('update_launcher', { release: S.launcherRel }); } catch (e) { toast(err(e), true); } },
+  'update-launcher': async () => {
+    // a window with the download bar; when it is done the launcher closes and the new one opens by itself
+    const v = S.launcherRel?.version || '';
+    const el = sheet(`<header><h2>${esc(t('updatingLauncher', { v }))}</h2></header>
+      <div class="body"><div class="bar" style="margin:6px 0 10px"><i id="lup-bar"></i></div><p id="lup-msg" style="font-size:13px">${t('wineInstalling')}</p></div>`, '', 'launcher-update');
+    S.launcherDl = el;
+    try { await invoke('update_launcher', { release: S.launcherRel }); }
+    catch (e) { S.launcherDl = null; closeSheet(); toast(err(e), true); }
+  },
   'check-updates': () => loadReleases(true),
   'add-folder': async () => {
     const p = await invoke('pick', { kind: 'folder', title: t('addFolder') });
@@ -772,7 +780,21 @@ $('#btn-close').addEventListener('click', () => win?.close());
 document.querySelector('.titlebar').addEventListener('dblclick', (e) => { if (e.target.closest('[data-tauri-drag-region]')) win?.toggleMaximize(); });
 
 // ---------- events ----------
-listen('build-progress', (e) => { S.build = e.payload; if (S.view === 'build') render(); if (e.payload.state !== 'running') refresh(); });
+listen('build-progress', async (e) => {
+  S.build = e.payload;
+  if (S.view === 'build') render();
+  if (e.payload.state === 'done') {
+    // finished: back to the main page by itself, with the install as it is now
+    const done = e.payload.instance;
+    setTimeout(async () => {
+      if (S.view !== 'build' || S.build?.state !== 'done') return;
+      S.view = 'main'; if (done) S.sel = done; S.build = null;
+      await refresh();
+      const i = instances().find((x) => x.path === done);
+      toast(t('gameUpdated', { v: i?.tag || '' }));
+    }, 1800);
+  } else if (e.payload.state !== 'running') refresh();
+});
 listen('build-log', (e) => {
   S.log.push(...e.payload);
   if (S.log.length > 4000) S.log.splice(0, S.log.length - 3000);
@@ -791,6 +813,12 @@ listen('game-exit', (e) => {
 });
 listen('vendor-progress', (e) => {
   const v = S.vendor; const p = e.payload;
+  if (p.phase === 'launcher' && S.launcherDl && document.body.contains(S.launcherDl)) {
+    const f = p.total ? p.done / p.total : 0;
+    S.launcherDl.querySelector('#lup-bar').style.width = (f * 100).toFixed(1) + '%';
+    S.launcherDl.querySelector('#lup-msg').textContent = f >= 1 ? t('restartingLauncher') : t('downloading', { p: `${fmtSize(p.done)} / ${fmtSize(p.total)}` });
+    return;
+  }
   if (p.id === 'wine') {
     S.wineDl = { done: p.done, total: p.total, msg: p.phase === 'extract' ? t('extracting') : t('downloading', { p: `${fmtSize(p.done)} / ${fmtSize(p.total)}` }) };
     lastHtml = ''; render();

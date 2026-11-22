@@ -1,13 +1,11 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.11
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.12
 
-- After updating the game to the port's **v0.2.0**, the launcher still showed 0.1.4 and kept offering the update: it read the
-  version from the package's release notes, which 0.2.0 no longer carries. It now uses the version it noted when it built or
-  updated the install.
-
-Verified: "Update game" from 0.1.4 to 0.2.0 on a hand-made install (new runtime, `xc2_boot.exe` linked again, saves and
-settings kept).
+- **Updating the launcher** shows a window with the download bar; when it is done the launcher closes and the new version
+  opens by itself.
+- **After the game is updated (or built)** the launcher goes back to the main page by itself, showing the new version, instead
+  of waiting on "Ready!".
 
 ---
 
-**Español:** después de actualizar el juego a la v0.2.0, el lanzador seguía mostrando 0.1.4 y ofreciendo la actualización;
-ahora usa la versión que anotó al actualizar.
+**Español:** al actualizar el lanzador se ve una barra de descarga y después se reabre solo con la versión nueva; al terminar
+de actualizar o compilar el juego, vuelve solo a la pantalla principal con la versión nueva.
