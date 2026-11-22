@@ -27,7 +27,7 @@ export async function mockInvoke(cmd, a = {}) {
     case 'cover': return 'cover-demo.jpg';
     case 'instance_size': return 8.0e9;
     case 'saves': return { folder: I + '/pkg/save/account/0100000000000000635232534e324358', files: [{ name: 'bf2savefile.sav', size: 2101248, modified: now - 7200 }, { name: 'bf2option.sav', size: 4096, modified: now - 7200 }], latest: now - 7200, backups: 1 };
-    case 'save_values': return { money: 38880, common: 25, rare: 0, legendary: 10 };
+    case 'save_values': return { money: 38880, common: 25, rare: 0, legendary: 10, overdrive: 10 };
     case 'set_save_values': return { values: a.values, backup: I + '/pkg/save/account/x.respaldo-1' };
     case 'restore_backup': return I + '/pkg/save/account/x.respaldo-1';
     case 'read_options': return { ...opts };

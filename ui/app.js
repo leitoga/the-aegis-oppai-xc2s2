@@ -578,7 +578,7 @@ async function vendorSheet(id) {
 
 // money and the three stackable core crystals of the save (null: still reading)
 function editFields(v) {
-  const rows = [['money', 'money', 99999999], ['common', 'crystalCommon', 99], ['rare', 'crystalRare', 99], ['legendary', 'crystalLegendary', 99]];
+  const rows = [['money', 'money', 99999999], ['common', 'crystalCommon', 99], ['rare', 'crystalRare', 99], ['legendary', 'crystalLegendary', 99], ['overdrive', 'overdrive', 99]];
   return rows.map(([k, label, max]) => `<div class="field"><div class="fl"><b>${t(label)}</b><span>${t('upTo', { n: max.toLocaleString() })}</span></div>
     <input class="num" type="number" min="0" max="${max}" step="1" data-k="${k}" value="${v ? v[k] : ''}" ${v ? '' : 'disabled'}></div>`).join('');
 }
