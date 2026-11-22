@@ -224,6 +224,80 @@ fn ascii_source(inst: &Path, source: &Path) -> Result<PathBuf, String> {
     Ok(link)
 }
 
+/// The engine links the game files in with `mklink /J`: under Wine those are Windows junctions (reparse points) that only
+/// Wine reads, and that show up on Linux as entries ending in "?". They become plain Linux links here, the same as a
+/// hand-made install: pkg/exefs and pkg/romfs to the dump, game/romfs-301 to ../romfs, and the add-on content (DLC, unpacked
+/// from the .nup into dump/dlc/<title id>/romfs) as pkg/dlc and game/dlc-301. Wine, Proton and the launcher then all see the
+/// same files. Only links and empty leftovers are replaced; a real folder with files in it is left alone.
+pub fn native_links(log: &dyn Fn(String), pkg: &Path, input: &Path, dlc: &Path) {
+    use std::os::unix::fs::symlink;
+    let replace = |link: &Path, target: &Path, ok: &dyn Fn(&Path) -> bool| {
+        // a relative target counts from the link's own folder (which has to exist for the path to resolve)
+        if let Some(d) = link.parent() {
+            let _ = fs::create_dir_all(d);
+        }
+        let resolved = if target.is_relative() { link.parent().map(|d| d.join(target)).unwrap_or_else(|| target.to_path_buf()) } else { target.to_path_buf() };
+        if !resolved.exists() {
+            return;
+        }
+        // the Wine leftover beside it ("exefs?")
+        let mut odd = link.as_os_str().to_owned();
+        odd.push("?");
+        let odd = PathBuf::from(odd);
+        if let Ok(m) = fs::symlink_metadata(&odd) {
+            if m.is_dir() { let _ = fs::remove_dir(&odd); } else { let _ = fs::remove_file(&odd); }
+        }
+        if let Ok(m) = fs::symlink_metadata(link) {
+            if m.file_type().is_symlink() {
+                if fs::read_link(link).map(|t| t == target).unwrap_or(false) {
+                    return;
+                }
+                let _ = fs::remove_file(link);
+            } else if m.is_dir() {
+                if ok(link) || fs::read_dir(link).map(|mut r| r.next().is_some()).unwrap_or(true) {
+                    return; // a real folder with the files: keep it
+                }
+                let _ = fs::remove_dir(link);
+            } else {
+                let _ = fs::remove_file(link);
+            }
+        }
+        if let Some(d) = link.parent() {
+            let _ = fs::create_dir_all(d);
+        }
+        match symlink(target, link) {
+            Ok(()) => log(format!("linked {} -> {}", link.display(), target.display())),
+            Err(e) => log(format!("cannot link {}: {e}", link.display())),
+        }
+    };
+    replace(&pkg.join("exefs"), &input.join("exefs"), &|p| p.join("main").is_file());
+    replace(&pkg.join("romfs"), &input.join("romfs"), &|p| p.join("bf2.ard").is_file());
+    replace(&pkg.join("game/romfs-301"), Path::new("../romfs"), &|p| p.join("bf2.ard").is_file());
+    let has_dlc = fs::read_dir(dlc).map(|mut r| r.next().is_some()).unwrap_or(false);
+    if has_dlc {
+        replace(&pkg.join("dlc"), dlc, &|p| fs::read_dir(p).map(|mut r| r.next().is_some()).unwrap_or(false));
+        replace(&pkg.join("game/dlc-301"), Path::new("../dlc"), &|p| fs::read_dir(p).map(|mut r| r.next().is_some()).unwrap_or(false));
+        log(format!("dlc: {}", fs::read_dir(dlc).map(|r| r.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>().join(", ")).unwrap_or_default()));
+    }
+}
+
+/// The same links for an instance that is already built (before v0.1.6, or by hand): called before the game starts.
+pub fn repair_links(inst: &Path) {
+    let m = instance::read_marker(inst);
+    let src = PathBuf::from(&m.source);
+    let input = if src.is_file() || inst.join("dump/.nup_done").is_file() {
+        match pick_dump(&inst.join("dump")) {
+            Ok(d) => d,
+            Err(_) => return,
+        }
+    } else if src.is_dir() {
+        src
+    } else {
+        return;
+    };
+    native_links(&|_| {}, &instance::pkg(inst), &input, &inst.join("dump/dlc"));
+}
+
 /// The folder of an unpacked .nup the game runs from: the newest update that has both exefs/main and romfs/bf2.ard, else
 /// the base game.
 fn pick_dump(out: &Path) -> Result<PathBuf, String> {
@@ -519,6 +593,7 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
         ctx.log(format!("source link {} -> {}", engine_source.display(), source.display()));
     }
     engine(ctx, req, inst, &engine_source, "lift", "link,shaders,done")?;
+    native_links(&|l| ctx.log(l), &pkg, &input, &inst.join("dump/dlc"));
 
     // 4-5. zig and the native link
     if !pkg.join("xc2_boot.exe").is_file() {
@@ -534,6 +609,7 @@ fn run_inner(ctx: &Ctx, req: &Request, inst: &Path) -> Result<(), String> {
     // 6. shaders, nxrt.ini, launch.env
     ctx.set("shaders", -1.0, "");
     engine(ctx, req, inst, &engine_source, "shaders", "lift,link")?;
+    native_links(&|l| ctx.log(l), &pkg, &input, &inst.join("dump/dlc"));
 
     // 7. done
     ctx.set("done", -1.0, "");
@@ -553,6 +629,36 @@ pub fn shared() -> Arc<Shared> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn wine_junctions_become_linux_links() {
+        let d = std::env::temp_dir().join(format!("xc2l-links-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        let input = d.join("dump/base");
+        fs::create_dir_all(input.join("exefs")).unwrap();
+        fs::write(input.join("exefs/main"), b"m").unwrap();
+        fs::create_dir_all(input.join("romfs")).unwrap();
+        fs::write(input.join("romfs/bf2.ard"), b"a").unwrap();
+        fs::create_dir_all(d.join("dump/dlc/0100E95004039001/romfs")).unwrap();
+        let pkg = d.join("pkg");
+        // what Wine's mklink /J leaves: an empty "exefs?" and an empty romfs
+        fs::create_dir_all(pkg.join("exefs?")).unwrap();
+        fs::create_dir_all(pkg.join("romfs")).unwrap();
+        native_links(&|_| {}, &pkg, &input, &d.join("dump/dlc"));
+        assert!(pkg.join("exefs/main").is_file());
+        assert!(!pkg.join("exefs?").exists());
+        assert!(pkg.join("romfs/bf2.ard").is_file());
+        assert!(pkg.join("game/romfs-301/bf2.ard").is_file());
+        assert!(pkg.join("dlc/0100E95004039001/romfs").is_dir());
+        assert!(pkg.join("game/dlc-301/0100E95004039001/romfs").is_dir());
+        // a real folder with the files is kept
+        let _ = fs::remove_file(pkg.join("romfs"));
+        fs::create_dir_all(pkg.join("romfs")).unwrap();
+        fs::write(pkg.join("romfs/bf2.ard"), b"real").unwrap();
+        native_links(&|_| {}, &pkg, &input, &d.join("dump/dlc"));
+        assert!(!fs::symlink_metadata(pkg.join("romfs")).unwrap().file_type().is_symlink());
+        let _ = fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn non_ascii_sources_get_a_plain_link() {
         let d = std::env::temp_dir().join(format!("xc2l-src-{}", std::process::id()));

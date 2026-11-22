@@ -228,7 +228,10 @@ async fn play(app: AppHandle, path: String, build: State<'_, Arc<compile::Shared
     if o.REESCALADO == "dlss" && !instance::has_dlss(&inst) {
         return Err("no-dlss".into());
     }
-    let p = launch::start(&inst, &o, &c.wine, &c.proton)?;
+    let a = app.clone();
+    let p = launch::start(&inst, &o, &c.wine, &c.proton, Box::new(move |code, tail| {
+        let _ = a.emit("game-exit", serde_json::json!({ "code": code, "log": tail }));
+    }))?;
     if c.minimize_on_play {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.minimize();

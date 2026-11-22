@@ -274,13 +274,20 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
 }
 
 /// Starts the game, detached from the launcher (it keeps running when the launcher closes).
-pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str) -> Result<Plan, String> {
+/// Starts the game. `on_exit(code, last lines of the output)` is called when it ends with an error within its first minute
+/// (it did not really start): the launcher shows that instead of waiting forever.
+pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, on_exit: Box<dyn FnOnce(i32, String) + Send>) -> Result<Plan, String> {
     if util::process_running(EXE) {
         return Err("running".into());
     }
     let pkg = instance::pkg(inst);
     let p = plan(inst, o, wine_setting, proton_setting, util::now())?;
-    if !p.proton {
+    // the game's files as plain Linux links (an instance built before v0.1.6 still has Wine's junctions)
+    crate::compile::repair_links(inst);
+    if p.proton {
+        // Proton creates its prefix inside this folder, but not the folder itself (pfx.lock: FileNotFoundError)
+        fs::create_dir_all(inst.join("proton-pfx")).map_err(|e| format!("proton-pfx: {e}"))?;
+    } else {
         // no Wine window ever: the prefix is brought up to date headless before the game starts in it
         let w = wine(wine_setting).ok_or("no-wine")?;
         crate::deps::prepare_prefix(&w, &inst.join("prefix"))?;
@@ -304,9 +311,17 @@ pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str)
         c.process_group(0);
     }
     let mut child = c.spawn().map_err(|e| format!("{}: {e}", p.program.display()))?;
-    // reap it in the background so it does not stay a zombie while the launcher is open
+    let started = std::time::Instant::now();
+    let out_log = pkg.join("work/logs/launcher-stdout.log");
+    // reap it in the background (no zombie while the launcher is open), and report an early failure
     std::thread::spawn(move || {
-        let _ = child.wait();
+        let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
+        if code != 0 && started.elapsed().as_secs() < 60 {
+            let text = fs::read_to_string(&out_log).unwrap_or_default();
+            let lines: Vec<&str> = text.lines().filter(|l| !l.contains("MESA-EGL") && !l.starts_with("pci id for fd")).collect();
+            let tail = lines[lines.len().saturating_sub(25)..].join("\n");
+            on_exit(code, tail);
+        }
     });
     Ok(p)
 }

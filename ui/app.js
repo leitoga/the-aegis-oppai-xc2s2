@@ -779,6 +779,16 @@ listen('build-log', (e) => {
   const l = $('.log');
   if (l) { l.textContent = S.log.slice(-600).join('\n'); l.scrollTop = l.scrollHeight; }
 });
+// the game ended with an error within its first minute: show why instead of "starting…"
+listen('game-exit', (e) => {
+  const { code, log } = e.payload;
+  if (S.st) S.st.running = false;
+  render();
+  sheet(`<header><h2>${t('gameExitTitle')}</h2><button class="tb-btn" data-close>${icon('x')}</button></header>
+    <div class="body"><p>${esc(t('gameExitBody', { code }))}</p><div class="log" style="height:260px">${esc(log || '')}</div></div>
+    <footer><button class="btn primary" data-close>${t('ok')}</button></footer>`, 'wide', 'game-exit');
+  bindSheet();
+});
 listen('vendor-progress', (e) => {
   const v = S.vendor; const p = e.payload;
   if (p.id === 'wine') {

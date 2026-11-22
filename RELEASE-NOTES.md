@@ -1,23 +1,18 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.5
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.6
 
-**Set up from a `.nup` now works end to end** (verified: 15 minutes, 12,137 shaders, under 8 GB of memory). Builds that
-failed with v0.1.2 or the v0.1.3/v0.1.4 test builds should be retried with this one.
+Fixes from the first test on a second PC (Kubuntu 26.04):
 
-- **Its own Wine 11.22**, downloaded once into the launcher's folder (~98 MB, SHA-256 checked, no password, nothing installed
-  in the system): the same Wine on every distribution. Ubuntu/Kubuntu's older Wine is no longer used for building.
-- **No Wine window at any time**: the prefix is prepared without a display; the Mono/Gecko prompts and the crash window are off.
-- **Fixed: the shader step crashed** (`spirv_harness.exe` "has encountered a serious problem"): the launcher had disabled
-  Wine's `mscoree`, which the port's .NET tools need to load their DLLs.
-- **Fixed: the PC ran out of memory while unpacking the `.nup`** (the port's own extractor held it in memory, over 20 GB;
-  the system then closed programs). The launcher now unpacks it natively, file by file.
-- **Fixed: a build interrupted while unpacking** left the game files half extracted and the next try failed; they are now
-  extracted again.
-- v0.1.3 and v0.1.4 were test builds and are superseded by this release.
-
-Set up needs about 45 GB free.
+- **DLC**: the add-on content in the `.nup` (Torna – The Golden Country and the expansion pass, 7 titles) is now linked where
+  the game looks for it. Without it a save that uses them said *"the downloadable content has been deleted"*.
+- **Game files seen by Proton**: the port's setup engine links the game files with Windows junctions, which under Wine show up
+  as entries ending in "?" and only Wine reads. The launcher now turns them into plain Linux links (exefs, romfs, game/romfs-301,
+  dlc, game/dlc-301). An instance built with v0.1.5 is repaired by itself the next time you press Play — no need to rebuild.
+- **Proton did not start** (`pfx.lock: FileNotFoundError`): the instance's `proton-pfx` folder is now created first.
+- **When the game closes while starting**, the launcher now shows it, with the last lines of its log, instead of staying on
+  "starting".
 
 ---
 
-**Español:** la compilación desde el `.nup` ya funciona de punta a punta. El launcher trae su propio Wine 11.22 (sin
-contraseña), no muestra ninguna ventana de Wine, arregla el cierre de la herramienta de shaders y el problema de memoria al
-extraer el `.nup`. Si te falló antes, actualiza y vuelve a intentar.
+**Español:** arregla los DLC (Torna y el pase de expansión; tu partida decía «el contenido descargable se ha borrado»), los
+enlaces de los archivos del juego para que Proton los vea, el arranque con Proton (`pfx.lock`) y muestra el error si el juego
+se cierra al arrancar. Si ya compilaste con la v0.1.5, no hace falta recompilar: se arregla solo al apretar Jugar.
