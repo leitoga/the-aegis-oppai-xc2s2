@@ -87,6 +87,8 @@ pub struct Options {
     pub MANDO: String,
     /// where the port's own frame rate counter goes: top_left, top_right, bottom_left, bottom_right
     pub ESQUINA: String,
+    /// the port's in-game menu (F1, or minus+plus on the pad): "0" / "1"
+    pub MENU: String,
 }
 
 impl Default for Options {
@@ -103,6 +105,7 @@ impl Default for Options {
             IDIOMA: "LatinAmericanSpanish".into(),
             MANDO: "auto".into(),
             ESQUINA: "top_left".into(),
+            MENU: "0".into(),
         }
     }
 }
@@ -125,6 +128,7 @@ pub fn read_options(inst: &Path) -> Options {
             "IDIOMA" => o.IDIOMA = v,
             "MANDO" => o.MANDO = v,
             "ESQUINA" => o.ESQUINA = v,
+            "MENU" => o.MENU = v,
             _ => {}
         }
     }
@@ -142,6 +146,7 @@ pub fn write_options(inst: &Path, o: &Options) -> Result<(), String> {
         ("ESCALA", &o.ESCALA), ("REESCALADO", &o.REESCALADO), ("NITIDEZ", &o.NITIDEZ), ("IDIOMA", &o.IDIOMA),
         ("MANDO", &o.MANDO),
         ("ESQUINA", &o.ESQUINA),
+        ("MENU", &o.MENU),
     ];
     let mut text = String::new();
     for (k, v) in fields {

@@ -174,12 +174,20 @@ fn write_controls(pkg: &Path, o: &Options) {
         "top_right" | "bottom_left" | "bottom_right" => o.ESQUINA.as_str(),
         _ => "top_left",
     };
-    text = set_ini(&text, "fps", "show", if o.FPS == "1" { "1" } else { "0" });
+    // the port's own counter needs its overlay, which xc2_boot keeps off for this game: the launcher's counter is MangoHud
+    text = set_ini(&text, "fps", "show", "0");
     text = set_ini(&text, "fps", "corner", corner);
     // 0: the frame rate only (1 adds the frame time, 2 the 1% low and the worst frame)
     text = set_ini(&text, "fps", "detail", "0");
     if text != before {
         let _ = fs::write(&path, text);
+    }
+    // undo what v0.1.6's test build wrote: the overlay switch in nxrt.ini has no effect for XC2
+    let ini = pkg.join("nxrt.ini");
+    if let Ok(t) = fs::read_to_string(&ini) {
+        if t.contains("overlay = 1") {
+            let _ = fs::write(&ini, set_ini(&t, "gfx", "overlay", "0"));
+        }
     }
 }
 
@@ -189,7 +197,6 @@ pub struct Plan {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     pub proton: bool,
-    pub log: PathBuf,
 }
 
 pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, stamp: u64) -> Result<Plan, String> {
@@ -239,7 +246,6 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         push(&mut env, "SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT", only);
     }
     let log_rel = format!("work\\logs\\play-{stamp}.log");
-    let log = pkg.join("work/logs").join(format!("play-{stamp}.log"));
     let game_args = vec!["--exefs".to_string(), format!("{w}\\exefs"), "--link".into(), "host".into(), "--gfx".into(), "window".into(), "--log".into(), format!("{w}\\{log_rel}")];
 
     let gamemode = util::which("gamemoderun");
@@ -270,7 +276,7 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         }
         None => (runner, args),
     };
-    Ok(Plan { program, args, env, proton: use_proton, log })
+    Ok(Plan { program, args, env, proton: use_proton })
 }
 
 /// Starts the game, detached from the launcher (it keeps running when the launcher closes).
@@ -299,9 +305,26 @@ pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str,
     let err = out.try_clone().map_err(|e| e.to_string())?;
     let mut c: Command = host_cmd(&p.program);
     c.args(&p.args).current_dir(&pkg).stdin(Stdio::null()).stdout(out).stderr(err);
-    // the counter is the port's own now (controls.ini [fps]); MangoHud stays off unless the player forces it
-    if std::env::var_os("MANGOHUD").is_none() {
-        c.env("DISABLE_MANGOHUD", "1");
+    // MangoHud: the loading card while the game's window is black, then the counter (or nothing). Its file is rewritten by
+    // the launcher while the game runs (MangoHud re-reads it); a DISABLE_MANGOHUD of the session must not hide it.
+    let mango_file = pkg.join("work/aegis-mangohud.conf");
+    let mut mango = true;
+    if !crate::deps::system_mangohud() {
+        match crate::deps::own_mangohud() {
+            Ok(dir) => {
+                let prev = std::env::var("VK_INSTANCE_LAYERS").unwrap_or_default();
+                let layers = if prev.is_empty() { crate::deps::MANGO_LAYER.to_string() } else { format!("{prev}:{}", crate::deps::MANGO_LAYER) };
+                c.env("VK_ADD_LAYER_PATH", &dir).env("VK_LAYER_PATH", &dir).env("VK_INSTANCE_LAYERS", layers);
+            }
+            Err(_) => mango = false, // no loading card and no counter, the game still starts
+        }
+    }
+    if mango {
+        let _ = fs::create_dir_all(pkg.join("work"));
+        let _ = fs::write(&mango_file, crate::deps::MANGO_HIDDEN);
+        c.env_remove("DISABLE_MANGOHUD").env_remove("MANGOHUD_CONFIG").env("MANGOHUD", "1").env("MANGOHUD_CONFIGFILE", &mango_file);
+    } else {
+        c.env("DISABLE_MANGOHUD", "1").env_remove("MANGOHUD");
     }
     for (k, v) in &p.env {
         c.env(k, v);
@@ -310,19 +333,37 @@ pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str,
         use std::os::unix::process::CommandExt;
         c.process_group(0);
     }
-    let mut child = c.spawn().map_err(|e| format!("{}: {e}", p.program.display()))?;
     let started = std::time::Instant::now();
     let out_log = pkg.join("work/logs/launcher-stdout.log");
-    // reap it in the background (no zombie while the launcher is open), and report an early failure
-    std::thread::spawn(move || {
-        let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
-        if code != 0 && started.elapsed().as_secs() < 60 {
-            let text = fs::read_to_string(&out_log).unwrap_or_default();
-            let lines: Vec<&str> = text.lines().filter(|l| !l.contains("MESA-EGL") && !l.starts_with("pci id for fd")).collect();
-            let tail = lines[lines.len().saturating_sub(25)..].join("\n");
-            on_exit(code, tail);
-        }
-    });
+    let program = p.program.display().to_string();
+    // The game is started from a thread that lives as long as the game: Proton (pressure-vessel / the Steam runtime) asks
+    // Linux to end the game when the thread that started it ends (PR_SET_PDEATHSIG counts threads, not processes), and a
+    // short-lived worker thread made the game close by itself ~10 s after it started. The same thread waits for it (no
+    // zombie) and reports an early failure.
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    std::thread::Builder::new()
+        .name("game".into())
+        .spawn(move || {
+            let mut child = match c.spawn() {
+                Ok(ch) => {
+                    let _ = tx.send(Ok(()));
+                    ch
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("{program}: {e}")));
+                    return;
+                }
+            };
+            let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
+            if code != 0 && started.elapsed().as_secs() < 60 {
+                let text = fs::read_to_string(&out_log).unwrap_or_default();
+                let lines: Vec<&str> = text.lines().filter(|l| !l.contains("MESA-EGL") && !l.starts_with("pci id for fd")).collect();
+                let tail = lines[lines.len().saturating_sub(25)..].join("\n");
+                on_exit(code, tail);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())??;
     Ok(p)
 }
 

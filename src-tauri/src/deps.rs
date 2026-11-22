@@ -93,6 +93,106 @@ pub fn prepare_prefix(wine: &Path, prefix: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// ---- MangoHud: the frame rate counter ----
+// The port's own counter is drawn by its overlay, which xc2_boot turns off for XC2 (po.overlay = false in xc2_boot.cpp: the
+// game's keys never reach the overlay), so the launcher shows the frame rate with MangoHud instead: just the number, in a
+// small dark rounded box. A system MangoHud is used as it is; otherwise the official release is downloaded once
+// (SHA-256 pinned) and its 64-bit layer is loaded from the launcher's folder.
+
+const MANGO_URL: &str = "https://github.com/flightlessmango/MangoHud/releases/download/v0.8.4/MangoHud-0.8.4.r0.g992103e.tar.gz";
+const MANGO_SIZE: u64 = 10_282_346;
+const MANGO_SHA256: &str = "aa0b2a009552f5e7c50baabf361267a79ea5e5c0fea440786f3b202d51f57753";
+pub const MANGO_LAYER: &str = "VK_LAYER_MANGOHUD_overlay_x86_64";
+
+pub fn system_mangohud() -> bool {
+    ["/usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json", "/usr/share/vulkan/implicit_layer.d/MangoHud.json", "/etc/vulkan/implicit_layer.d/MangoHud.x86_64.json"]
+        .iter()
+        .any(|p| Path::new(p).is_file())
+        || util::home().join(".local/share/vulkan/implicit_layer.d/MangoHud.x86_64.json").is_file()
+}
+
+/// The launcher's own MangoHud layer folder (with its manifest), downloading it the first time.
+pub fn own_mangohud() -> Result<PathBuf, String> {
+    let dir = util::data_dir().join("mangohud-0.8.4");
+    let manifest = dir.join("layer/MangoHud.x86_64.json");
+    let lib = dir.join("lib64/libMangoHud.so");
+    if manifest.is_file() && lib.is_file() {
+        return Ok(dir.join("layer"));
+    }
+    let tarball = util::cache_dir().join("MangoHud-0.8.4.tar.gz");
+    if !(tarball.is_file() && crate::net::sha256(&tarball)? == MANGO_SHA256) {
+        let _ = fs::remove_file(&tarball);
+        crate::net::download(MANGO_URL, &tarball, MANGO_SIZE, &AtomicBool::new(false), &|_, _| {})?;
+        if crate::net::sha256(&tarball)? != MANGO_SHA256 {
+            let _ = fs::remove_file(&tarball);
+            return Err(format!("{MANGO_URL}: SHA-256 mismatch"));
+        }
+    }
+    let work = util::cache_dir().join("mangohud-unpack");
+    let _ = fs::remove_dir_all(&work);
+    fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    let ok = host_cmd("tar").arg("-xzf").arg(&tarball).arg("-C").arg(&work).status().map(|s| s.success()).unwrap_or(false)
+        && host_cmd("tar")
+            .arg("-xf")
+            .arg(work.join("MangoHud/MangoHud-package.tar"))
+            .arg("-C")
+            .arg(&work)
+            .arg("./usr/lib/mangohud/lib64/libMangoHud.so")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+    if !ok {
+        return Err("tar: MangoHud".into());
+    }
+    fs::create_dir_all(dir.join("lib64")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir.join("layer")).map_err(|e| e.to_string())?;
+    fs::copy(work.join("usr/lib/mangohud/lib64/libMangoHud.so"), &lib).map_err(|e| e.to_string())?;
+    let _ = fs::remove_dir_all(&work);
+    let _ = fs::remove_file(&tarball);
+    // an explicit layer (enabled by VK_INSTANCE_LAYERS), pointing at the library in the launcher's folder
+    let json = serde_json::json!({
+        "file_format_version": "1.0.0",
+        "layer": {
+            "name": MANGO_LAYER, "type": "GLOBAL", "api_version": "1.3.0",
+            "library_path": lib.display().to_string(), "implementation_version": "1",
+            "description": "Vulkan Hud Overlay",
+            "functions": { "vkNegotiateLoaderLayerInterfaceVersion": "vkNegotiateLoaderLayerInterfaceVersion" }
+        }
+    });
+    util::write_atomic(&manifest, &serde_json::to_string_pretty(&json).unwrap_or_default())?;
+    Ok(dir.join("layer"))
+}
+
+/// MangoHud's settings for the counter: only the number, white, in a small dark rounded box, in the chosen corner.
+pub fn mango_counter(corner: &str) -> String {
+    let pos = match corner {
+        "top_right" => "top-right",
+        "bottom_left" => "bottom-left",
+        "bottom_right" => "bottom-right",
+        _ => "top-left",
+    };
+    format!("fps_only\nfont_size=30\ntext_color=FFFFFF\nbackground_color=1F1719\nbackground_alpha=0.75\nround_corners=12\nposition={pos}\noffset_x=20\noffset_y=20\n")
+}
+
+/// The loading card MangoHud draws inside the game while its window is still black: the stage, the percentage and a text
+/// bar, centred on a dark rounded box. MangoHud re-reads its file while the game runs, so the bar moves. (MangoHud 0.8 has no
+/// image option: the logo is not possible here.) `#` starts a comment in MangoHud's file, so the bar is drawn with `|`.
+pub fn mango_loading(title: &str, percent: u32, screen: (u32, u32)) -> String {
+    let filled = (percent.min(100) as usize * 30) / 100;
+    let bar = format!("[{}{}]", "|".repeat(filled), ".".repeat(30 - filled));
+    let (w, h) = screen;
+    let font = (h / 40).clamp(24, 64);
+    let box_w = font * 20;
+    let x = w.saturating_sub(box_w) / 2;
+    let y = (h / 2).saturating_sub(font * 2);
+    format!(
+        "legacy_layout=0\ngpu_stats=0\ncpu_stats=0\nfps=0\nframe_timing=0\nframetime=0\nfont_size={font}\ntext_color=FFFFFF\nbackground_color=1F1719\nbackground_alpha=0.92\nround_corners=16\nposition=top-left\noffset_x={x}\noffset_y={y}\nwidth={box_w}\ncustom_text={title}   {percent} %\ncustom_text={bar}\n"
+    )
+}
+
+/// Nothing on screen (the counter is off): MangoHud stays loaded but hides itself.
+pub const MANGO_HIDDEN: &str = "no_display\n";
+
 // ---- GE-Proton ----
 
 /// Where a downloaded Proton goes: Steam's own compatibility tools folder when Steam is installed (Steam then offers it too),

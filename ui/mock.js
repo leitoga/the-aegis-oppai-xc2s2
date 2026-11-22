@@ -4,7 +4,7 @@ const demo = new URLSearchParams(location.search).get('demo') || 'main';
 const now = Math.floor(Date.now() / 1000);
 const I = '/home/player/Games/xc2-ns2-recomp';
 let config = { lang: new URLSearchParams(location.search).get('lang') || '', instances: demo === 'first' ? [] : [I], default: I, channel: 'estable', minimize_on_play: false, jobs: 0, proton: '', wine: '', dismissed: '' };
-const opts = { VENTANA: 'auto', MODO: 'borderless', BLOQUEAR: '0', FPS: '1', SALIDA: '3840x2160', ESCALA: '1', REESCALADO: 'dlss', NITIDEZ: '1', IDIOMA: 'LatinAmericanSpanish', MANDO: 'auto', ESQUINA: 'top_left' };
+const opts = { VENTANA: 'auto', MODO: 'borderless', BLOQUEAR: '0', FPS: '1', SALIDA: '3840x2160', ESCALA: '1', REESCALADO: 'dlss', NITIDEZ: '1', IDIOMA: 'LatinAmericanSpanish', MANDO: 'auto', ESQUINA: 'top_left', MENU: '0' };
 const rel = (v, d, pre = false) => ({ tag: 'v' + v, version: v, name: `XC2 NS2 Recomp v${v}`, prerelease: pre, date: d, url: 'https://github.com/weile10000/xc2-ns2-recomp/releases/tag/v' + v,
   notes: `# XC2 NS2 Recomp v${v}\n\n**Demo notes.**\n\n- The frame on screen is the frame the game finished\n- Cutscenes have their sound back\n- \`NXRT_NVN_PRESENT_AHEAD\` defaults to 0`,
   asset_name: `XC2-package-dist-${v}.zip`, asset_url: 'x', asset_size: 674634422, sha256: '' });

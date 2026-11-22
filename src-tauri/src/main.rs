@@ -7,6 +7,7 @@ mod compile;
 mod deps;
 mod hw;
 mod instance;
+mod kwin;
 mod launch;
 mod net;
 mod nup;
@@ -211,7 +212,68 @@ async fn write_options(path: String, options: instance::Options) -> Result<(), S
 #[derive(Serialize)]
 struct Played {
     proton: bool,
-    log: String,
+}
+
+/// The screen size the game draws at (MangoHud's offsets are in its pixels): the window size option, else the display's.
+fn game_screen(o: &instance::Options) -> (u32, u32) {
+    let parse = |m: &str| m.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
+    if o.VENTANA != "auto" {
+        if let Some(s) = parse(&o.VENTANA) {
+            return s;
+        }
+    }
+    hw::displays().iter().find_map(|d| parse(&d.current)).unwrap_or((1920, 1080))
+}
+
+/// Follows the runtime's log (pkg/nxrt.log, written anew at each start): while the game's window is black MangoHud shows
+/// the loading card (rewritten here as it advances); when frames go out, the counter (or nothing), and on KDE the Proton
+/// console is minimized and the game focused.
+fn watch_start(pkg: PathBuf, since: std::time::SystemTime, o: instance::Options, lang: String, first: bool, failed: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        let log = pkg.join("nxrt.log");
+        let file = pkg.join("work/aegis-mangohud.conf");
+        let screen = game_screen(&o);
+        let title = if lang == "es" { "Preparando los gráficos" } else { "Preparing the graphics" };
+        let t0 = std::time::Instant::now();
+        let mut window_at: Option<std::time::Instant> = None;
+        let mut seen_running = false;
+        let mut last = String::new();
+        // seconds the black window usually lasts: longer the first time (the driver has no pipeline cache yet)
+        let expect = if first { 60.0 } else { 20.0 };
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if failed.load(Ordering::SeqCst) || t0.elapsed().as_secs() > 600 {
+                break;
+            }
+            let running = util::process_running(launch::EXE);
+            seen_running |= running;
+            if seen_running && !running && t0.elapsed().as_secs() > 5 {
+                break;
+            }
+            let fresh = log.metadata().and_then(|m| m.modified()).map(|m| m >= since).unwrap_or(false);
+            let text = if fresh { fs::read_to_string(&log).unwrap_or_default() } else { String::new() };
+            if text.contains("nvn: present interval") || text.contains("hitch: ") {
+                let _ = fs::write(&file, deps::mango_loading(title, 100, screen));
+                std::thread::sleep(std::time::Duration::from_millis(900));
+                break;
+            }
+            if window_at.is_none() && text.contains("gfx: swapchain") {
+                window_at = Some(std::time::Instant::now());
+            }
+            if let Some(at) = window_at {
+                let p = at.elapsed().as_secs_f64() / expect;
+                // eases out and never reaches the end before the game draws
+                let pct = (3.0 + 93.0 * (1.0 - (1.0 - p.min(1.0)).powi(2))) as u32;
+                let conf = deps::mango_loading(title, pct, screen);
+                if conf != last {
+                    let _ = fs::write(&file, &conf);
+                    last = conf;
+                }
+            }
+        }
+        let _ = fs::write(&file, if o.FPS == "1" { deps::mango_counter(&o.ESQUINA) } else { deps::MANGO_HIDDEN.to_string() });
+        kwin::release_game();
+    });
 }
 
 #[tauri::command]
@@ -228,16 +290,32 @@ async fn play(app: AppHandle, path: String, build: State<'_, Arc<compile::Shared
     if o.REESCALADO == "dlss" && !instance::has_dlss(&inst) {
         return Err("no-dlss".into());
     }
-    let a = app.clone();
-    let p = launch::start(&inst, &o, &c.wine, &c.proton, Box::new(move |code, tail| {
-        let _ = a.emit("game-exit", serde_json::json!({ "code": code, "log": tail }));
-    }))?;
+    if util::process_running(launch::EXE) {
+        return Err("running".into());
+    }
+    let proton = o.REESCALADO == "dlss";
+    // the first start of a prefix is the long one
+    let first = if proton { !inst.join("proton-pfx/pfx").is_dir() } else { !inst.join("prefix/.aegis-wine").is_file() };
+    let lang = if c.lang.is_empty() { "en".to_string() } else { c.lang.clone() };
+    let since = std::time::SystemTime::now();
+    let failed = Arc::new(AtomicBool::new(false));
+    let (a, f) = (app.clone(), failed.clone());
+    let (inst2, o2, wine, proton_s) = (inst.clone(), o.clone(), c.wine.clone(), c.proton.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        launch::start(&inst2, &o2, &wine, &proton_s, Box::new(move |code, tail| {
+            f.store(true, Ordering::SeqCst);
+            let _ = a.emit("game-exit", serde_json::json!({ "code": code, "log": tail }));
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    watch_start(instance::pkg(&inst), since, o, lang, first, failed);
     if c.minimize_on_play {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.minimize();
         }
     }
-    Ok(Played { proton: p.proton, log: p.log.display().to_string() })
+    Ok(Played { proton })
 }
 
 #[tauri::command]
