@@ -1,11 +1,10 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.12
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.13
 
-- **Updating the launcher** shows a window with the download bar; when it is done the launcher closes and the new version
-  opens by itself.
-- **After the game is updated (or built)** the launcher goes back to the main page by itself, showing the new version, instead
-  of waiting on "Ready!".
+- **Controllers with DLSS (Proton):** Nintendo and PlayStation controllers (Switch Pro, DualShock 4, …) were sometimes not
+  seen by the game at all with DLSS, while they worked with TAAU/FSR. Proton now reads every controller the plain way (as
+  with Wine), and a hidden-controllers list inherited from Steam no longer reaches the game.
 
 ---
 
-**Español:** al actualizar el lanzador se ve una barra de descarga y después se reabre solo con la versión nueva; al terminar
-de actualizar o compilar el juego, vuelve solo a la pantalla principal con la versión nueva.
+**Español:** con DLSS (Proton) algunos mandos de Nintendo y PlayStation no llegaban al juego aunque con TAAU/FSR andaban.
+Ahora Proton lee todos los mandos por el camino normal, igual que Wine.

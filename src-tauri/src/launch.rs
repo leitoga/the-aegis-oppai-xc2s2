@@ -264,6 +264,10 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         push(&mut env, "SteamAppId", "0".into());
         push(&mut env, "SteamGameId", "0".into());
         push(&mut env, "UMU_ID", "0".into());
+        // Pads through SDL only (Proton's "sdlinput"): Proton otherwise opens Sony/Nintendo pads through hidraw, and where the
+        // user may not open /dev/hidraw* (Flatpak Steam, no steam-devices rules) it drops them: the game saw no pad at all.
+        push(&mut env, "PROTON_DISABLE_HIDRAW", "1".into());
+        push(&mut env, "PROTON_NO_STEAMINPUT", "1".into());
         // Proton wants the exe's absolute path
         (proton, vec!["run".into(), pkg.join(EXE).display().to_string()])
     } else {
@@ -328,6 +332,8 @@ pub fn start(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str,
     } else {
         c.env("DISABLE_MANGOHUD", "1").env_remove("MANGOHUD");
     }
+    // a launcher started from Steam inherits Steam's list of pads to hide (Steam Input's own): the game would see none
+    c.env_remove("SDL_GAMECONTROLLER_IGNORE_DEVICES").env_remove("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT");
     for (k, v) in &p.env {
         c.env(k, v);
     }
