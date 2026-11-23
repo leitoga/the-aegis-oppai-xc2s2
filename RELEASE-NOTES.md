@@ -1,11 +1,11 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.18
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.19
 
-- **Nintendo controllers with DLSS (Proton):** A/B and X/Y were swapped (A backed out, B confirmed). Proton's SDL2
-  (sdl2-compat) handed Nintendo pads over by the printed letter in Xbox places; it now hands them over by position, which
-  is what the game reads, so A (right) confirms and B (bottom) goes back, as on the Switch.
-- SDL3 carried for Proton (from v0.1.17) is kept.
+- **Pre-rendered cutscenes (films):** under Wine/Proton the runtime's GPU film decoders are not available, so the launcher
+  now sends films straight to the CPU decoder (`[media] hwdec = 0`). Films start cleanly; some can still stall and then
+  break up for a while: that part is in the runtime's film player and is reported upstream
+  (weile10000/xc2-ns2-recomp#35).
 
 ---
 
-**Español:** con DLSS, los mandos de Nintendo tenían A/B y X/Y cruzados. Ahora A (derecha) acepta y B (abajo) vuelve,
-como en la Switch.
+**Español:** los videos pregrabados ahora van directo al decodificador por procesador y arrancan bien. Algunos todavía se
+pueden trabar: esa parte está en el reproductor del motor y se la reportamos a sus autores.

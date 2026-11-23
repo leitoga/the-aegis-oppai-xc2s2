@@ -241,6 +241,10 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         push(&mut env, "NXRT_DLSS_SHARPNESS", o.NITIDEZ.clone());
         push(&mut env, "NXRT_UPSCALE_FSR_DLL", format!("{w}\\upscalers\\fsr\\amd_fidelityfx_loader_vk.dll"));
     }
+    // Films (4K AV1) on the CPU from their first packet: under Wine/Proton the runtime's hardware path (FFmpeg D3D11VA)
+    // takes the first packets of a film, keyframe included, then fails, and dav1d, handed the stream from the middle,
+    // answered -22 to every later packet (blocky, frozen cutscenes). nvcuvid, which NVDEC needs, is not in Proton either.
+    push(&mut env, "NXRT_MEDIA_HWDEC", "0".into());
     // the pad keeps working when the game's window does not have the focus (Proton's console window can take it)
     push(&mut env, "SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1".into());
     if let Some(only) = crate::hw::sdl_only(&o.MANDO) {
