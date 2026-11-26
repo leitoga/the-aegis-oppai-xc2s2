@@ -1,13 +1,17 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.20
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.21
 
-- **DLSS stays on:** since the port's 0.2.4 the runtime keeps copies of the game's memory in video memory (up to a
-  quarter of it, 2 GiB on an 8 GiB card). Together with what the desktop already uses, DLSS ran out of video memory
-  about 26 s into the game, switched itself off, and the rest of the session fell back to the built-in upscaler at
-  960x540 (a blurry picture). With DLSS chosen, the launcher now caps those copies at 1 GiB
-  (`[nvn] pool_mirror_mb = 1024`); a value written in `nxrt.ini` takes precedence.
+- **Mods page:** a new **Mods** card lists the folders in `pkg/mods`, with a switch per mod (the runtime's own
+  `[mods] disabled` in `nxrt.ini`), **Add mod** from a folder or a `.zip` (an extra wrapping folder is unwrapped;
+  emulator layouts such as `atmosphere/contents/0100E95004038000/romfs` are accepted), **Remove**, and **Open folder**.
+- **Mods that replace files inside the game's archive work without the port's Python tools:** most of the game's files
+  are inside `bf2.ard`, and the runtime only serves a replacement for those from records prepared beforehand
+  (`tools/mods/ard_pack.py`). The launcher now builds them itself — `.ard/<path>.rec` when the file still fits its slot,
+  otherwise `.ard/append.bin` plus a repointed `romfs/bf2.arh` — when a mod is added, and again before a start when a
+  mod's files or the game's archive index changed. Code patches (`exefs`) and cheats are listed but not applied.
+- Changes take effect the next time the game starts.
 
 ---
 
-**Español:** con DLSS elegido, el juego ya no se queda sin memoria de video: antes, a los ~26 segundos, DLSS se apagaba
-solo y la imagen quedaba borrosa (960x540). Ahora el lanzador limita a 1 GB las copias que el motor guarda en la placa.
-Si algún parpadeo vuelve, se puede poner otro valor en `nxrt.ini` (`pool_mirror_mb`).
+**Español:** nueva tarjeta **Mods**: activar o desactivar cada mod, agregar mods desde una carpeta o un `.zip`, quitarlos
+y abrir la carpeta. El lanzador prepara solo los mods que reemplazan archivos dentro del archivo grande del juego (antes
+hacía falta una herramienta aparte). Los cambios se aplican la próxima vez que abras el juego.

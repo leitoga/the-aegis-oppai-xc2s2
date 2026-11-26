@@ -11,6 +11,7 @@ mod kwin;
 mod launch;
 mod net;
 mod nup;
+mod mods;
 mod savedit;
 mod util;
 
@@ -294,6 +295,8 @@ async fn play(app: AppHandle, path: String, build: State<'_, Arc<compile::Shared
     if util::process_running(launch::EXE) {
         return Err("running".into());
     }
+    // mods added or changed by hand, or a game update that moved the archive index: their records are redone first
+    mods::prepare_stale(&instance::pkg(&inst));
     let proton = o.REESCALADO == "dlss";
     // the first start of a prefix is the long one
     let first = if proton { !inst.join("proton-pfx/pfx").is_dir() } else { !inst.join("prefix/.aegis-wine").is_file() };
@@ -653,6 +656,46 @@ fn cancel_vendor(task: State<Arc<VendorTask>>) {
     task.cancel.store(true, Ordering::SeqCst);
 }
 
+// ---- mods ----
+
+#[tauri::command]
+async fn mods_list(path: String) -> Result<Vec<mods::Mod>, String> {
+    let c = load();
+    Ok(mods::list(&instance::pkg(&known(&c, &path)?)))
+}
+
+#[tauri::command]
+async fn mod_enable(path: String, name: String, on: bool) -> Result<(), String> {
+    let c = load();
+    mods::set_enabled(&instance::pkg(&known(&c, &path)?), &name, on)
+}
+
+#[derive(Serialize)]
+struct ModAdded {
+    name: String,
+    prepared: mods::Prepared,
+}
+
+#[tauri::command]
+async fn mod_add(path: String, from: String) -> Result<ModAdded, String> {
+    let c = load();
+    let pkg = instance::pkg(&known(&c, &path)?);
+    let (name, prepared) = mods::add(&pkg, Path::new(&from))?;
+    Ok(ModAdded { name, prepared })
+}
+
+#[tauri::command]
+async fn mod_remove(path: String, name: String) -> Result<(), String> {
+    let c = load();
+    mods::remove(&instance::pkg(&known(&c, &path)?), &name)
+}
+
+#[tauri::command]
+async fn mod_prepare(path: String, name: String) -> Result<mods::Prepared, String> {
+    let c = load();
+    mods::prepare(&instance::pkg(&known(&c, &path)?), &name)
+}
+
 // ---- saves ----
 
 #[tauri::command]
@@ -822,7 +865,7 @@ fn main() {
             get_state, set_config, add_instance, forget_instance, set_default, instance_size, cover, set_cover, read_options,
             write_options, play, game_running, stop_game, releases, update_launcher, start_build, cancel_build, build_log,
             suggest_folder, check_source, vendor_license, install_vendor, cancel_vendor, saves, import_saves, backup_saves,
-            save_values, set_save_values, restore_backup,
+            save_values, set_save_values, restore_backup, mods_list, mod_enable, mod_add, mod_remove, mod_prepare,
             open_path, open_url, pick, hardware, install_wine, install_proton,
         ])
         .run(tauri::generate_context!())

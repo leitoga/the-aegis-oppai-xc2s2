@@ -30,6 +30,8 @@ export async function mockInvoke(cmd, a = {}) {
     case 'save_values': return { money: 38880, common: 25, rare: 0, legendary: 10, overdrive: 10 };
     case 'set_save_values': return { values: a.values, backup: I + '/pkg/save/account/x.respaldo-1' };
     case 'restore_backup': return I + '/pkg/save/account/x.respaldo-1';
+    case 'mods_list': return [{ name: 'Mythra traje nuevo (Torna)', enabled: true, files: 3, size: 8759744, romfs: true, code: false, cheats: false, prepared: true, skipped: [] }, { name: 'New Style Pyra y Mythra', enabled: false, files: 0, size: 0, romfs: false, code: false, cheats: false, prepared: false, skipped: [] }];
+    case 'mod_add': return { name: 'Mod nuevo', prepared: { records: 2, appended: 1, loose: 0, skipped: [] } };
     case 'read_options': return { ...opts };
     case 'write_options': Object.assign(opts, a.options); return null;
     case 'set_config': Object.assign(config, a.patch); return null;

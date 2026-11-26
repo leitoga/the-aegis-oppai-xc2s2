@@ -25,6 +25,7 @@ const S = {
   sel: null,           // the instance shown
   sizes: {},
   saves: {},
+  mods: {},
   covers: {},
   opts: {},
   wineDl: null,
@@ -83,6 +84,7 @@ async function refresh() {
   for (const i of instances()) {
     if (!(i.path in S.sizes)) { S.sizes[i.path] = null; invoke('instance_size', { path: i.path }).then((n) => { S.sizes[i.path] = n; render(); }); }
     invoke('saves', { path: i.path }).then((s) => { S.saves[i.path] = s; render(); });
+    invoke('mods_list', { path: i.path }).then((m) => { S.mods[i.path] = m; render(); }).catch(() => {});
     invoke('read_options', { path: i.path }).then((o) => { S.opts[i.path] = o; render(); });
   }
   render();
@@ -170,6 +172,7 @@ function mainView() {
   const running = S.st.running;
   const cover = inst && S.covers[inst.path];
   const saves = inst && S.saves[inst.path];
+  const mods = inst && S.mods[inst.path];
   const isDefault = inst && inst.path === c.default;
   const latest = channelReleases()[0];
 
@@ -205,6 +208,11 @@ function mainView() {
       <button class="card" data-act="saves">
         <div class="ic">${icon('save')}</div>
         <div class="txt"><b>${t('savesTitle')}</b><span>${saves && saves.files.length ? esc(t('savesSub', { n: saves.files.length, date: fmtDate(saves.latest) })) : t('savesNone')}</span></div>
+        ${icon('chev', 'chev')}
+      </button>
+      <button class="card" data-act="mods">
+        <div class="ic ${mods && mods.some((m) => m.enabled) ? 'on' : ''}">${icon('plus')}</div>
+        <div class="txt"><b>${t('modsTitle')}</b><span>${mods && mods.length ? esc(t('modsSub', { n: mods.length, on: mods.filter((m) => m.enabled).length })) : t('modsNone')}</span></div>
         ${icon('chev', 'chev')}
       </button>
       <button class="card" data-act="vendor" data-id="dlss">
@@ -640,6 +648,58 @@ async function savesSheet() {
   el.querySelector('[data-s=open]').addEventListener('click', () => invoke('open_path', { path: s.folder }).catch((e) => toast(err(e), true)));
 }
 
+// mods: folders in pkg/mods the runtime lays over the game's files at start; switches are [mods] disabled in nxrt.ini
+async function modsSheet() {
+  const inst = current();
+  if (!inst) return;
+  let list = [];
+  try { list = await invoke('mods_list', { path: inst.path }); } catch (e) { toast(err(e), true); }
+  S.mods[inst.path] = list;
+  const notes = (m) => [
+    `${m.files} ${t('modFiles')} · ${fmtSize(m.size)}`,
+    !m.romfs && !m.code && !m.cheats ? t('modNoRomfs') : '',
+    m.code ? t('modCode') : '', m.cheats ? t('modCheats') : '',
+    m.skipped.length ? t('modSkipped', { n: m.skipped.length }) : '',
+  ].filter(Boolean).join(' · ');
+  const el = sheet(`<header><h2>${t('modsTitle')}</h2><button class="tb-btn" data-close>${icon('x')}</button></header>
+    <div class="body"><p>${t('modsIntro')}</p>
+      <div class="group">${list.length ? list.map((m, i) => `<div class="field"><div class="fl"><b>${esc(m.name)}</b><span>${esc(notes(m))}</span></div>
+          <div class="acts" style="gap:10px;align-items:center"><button class="btn sm ghost" data-mrm="${i}" title="${t('modRemove')}">${icon('trash')}</button>${sw(String(i), m.enabled, 'data-msw')}</div></div>`).join('')
+        : `<div class="field"><div class="fl"><span>${t('modsNone')}</span></div></div>`}</div>
+      <p style="margin-top:10px;font-size:12.5px;color:var(--text-3)">${t('modsNext')}</p>
+      <div class="group">
+        <div class="field"><div class="fl"><b>${t('modAddFolder')}</b></div><button class="btn sm accent-outline" data-m="folder">${icon('folder')}${t('modAddFolder')}</button></div>
+        <div class="field"><div class="fl"><b>${t('modAddZip')}</b></div><button class="btn sm accent-outline" data-m="zip">${icon('download')}${t('modAddZip')}</button></div>
+        <div class="field"><div class="fl"><b>${t('openFolder')}</b></div><button class="btn sm" data-m="open">${icon('ext')}${t('openFolder')}</button></div>
+      </div>
+    </div>`, 'wide', 'mods');
+  bindSheet();
+  el.querySelectorAll('[data-msw]').forEach((b) => b.addEventListener('click', async () => {
+    const m = list[+b.dataset.msw];
+    try { await invoke('mod_enable', { path: inst.path, name: m.name, on: !m.enabled }); } catch (e) { toast(err(e), true); }
+    modsSheet(); render();
+  }));
+  el.querySelectorAll('[data-mrm]').forEach((b) => b.addEventListener('click', async () => {
+    const m = list[+b.dataset.mrm];
+    if (!(await confirmBox(t('modRemoveConfirm', { name: m.name }), t('modRemove'), true))) return modsSheet();
+    try { await invoke('mod_remove', { path: inst.path, name: m.name }); toast(t('modRemoved', { name: m.name })); } catch (e) { toast(err(e), true); }
+    modsSheet(); render();
+  }));
+  const add = async (kind) => {
+    const from = await invoke('pick', { kind, title: kind === 'zip' ? t('modAddZip') : t('modAddFolder') });
+    if (!from) return;
+    toast(t('modPreparing'));
+    try {
+      const r = await invoke('mod_add', { path: inst.path, from });
+      toast(r.prepared.skipped.length ? t('modAddedSkipped', { name: r.name, n: r.prepared.skipped.length }) : t('modAdded', { name: r.name }), r.prepared.skipped.length > 0);
+    } catch (e) { toast(err(e), true); }
+    modsSheet(); render();
+  };
+  el.querySelector('[data-m=folder]').addEventListener('click', () => add('folder'));
+  el.querySelector('[data-m=zip]').addEventListener('click', () => add('zip'));
+  el.querySelector('[data-m=open]').addEventListener('click', () => invoke('open_path', { path: inst.path + '/pkg/mods' }).catch((e) => toast(err(e), true)));
+}
+
 function menu(x, y, items) {
   document.querySelectorAll('.menu').forEach((m) => m.remove());
   const m = document.createElement('div');
@@ -721,6 +781,7 @@ const actions = {
     ]);
   },
   saves: savesSheet,
+  mods: modsSheet,
   vendor: (d) => vendorSheet(d.id),
   notes: (d) => notesSheet(d.which),
   dismiss: async (d) => { await invoke('set_config', { patch: { dismissed: d.which } }); refresh(); },
