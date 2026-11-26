@@ -235,6 +235,16 @@ pub fn plan(inst: &Path, o: &Options, wine_setting: &str, proton_setting: &str, 
         push(&mut env, "NXRT_DLSS_UPSCALER", "dlss".into());
         push(&mut env, "NXRT_UPSCALE_DLSS_DLL", format!("{w}\\upscalers\\streamline"));
         push(&mut env, "NXRT_DIAG_WATCHDOG_SECONDS", "600".into());
+        // Since 0.2.4 the runtime keeps copies of the game's memory pools in video memory (up to a quarter of it:
+        // 2 GiB on an 8 GiB card). With the desktop's own share, DLSS then ran out of video memory ~26 s in, failed
+        // (slEvaluateFeature 39, "Exceeded VRAM budget") and the rest of the session fell back to the built-in TAAU
+        // at 960x540. 1 GiB leaves DLSS its room; a value the player wrote in nxrt.ini wins.
+        let ini_sets_cap = fs::read_to_string(pkg.join("nxrt.ini"))
+            .map(|t| t.lines().any(|l| l.trim_start().starts_with("pool_mirror_mb")))
+            .unwrap_or(false);
+        if !ini_sets_cap {
+            push(&mut env, "NXRT_NVN_POOL_MIRROR_MB", "1024".into());
+        }
         use_proton = true;
     } else if o.REESCALADO == "fsr3" && instance::has_fsr(inst) {
         push(&mut env, "NXRT_DLSS_UPSCALER", "fsr3".into());

@@ -1,6 +1,6 @@
 [package]
 name = "aegis-oppai"
-version = "0.1.19"
+version = "0.1.20"
 description = "Linux launcher for the Xenoblade Chronicles 2 NS2 static recompilation: build from your own dump, configure and play through Wine or Proton"
 edition = "2021"
 license = "GPL-3.0-or-later"
