@@ -3,12 +3,16 @@
 //!
 //! Most of the game's files are inside bf2.ard. The runtime serves a replacement for such a file only from records
 //! prepared beforehand, which the port builds with tools/mods/ard_pack.py (Python, not in the release package). This
-//! module does the same work in the launcher, after a mod is added and again before a start when the mod or the
-//! game's archive index changed:
-//!   * the file still fits its slot once compressed: `<mod>/.ard/<path>.rec` (xbc1 header + zlib, padded to the slot);
-//!   * it does not, or the entry is stored raw: it goes into `<mod>/.ard/append.bin` and a copy of bf2.arh with the
-//!     entry pointing past the archive is written to `<romfs>/bf2.arh` (the runtime moves each mod's tail after the
-//!     ones before it, so every mod is prepared as if it were alone).
+//! module does that work in the launcher, after a mod is added and again before a start when the mod or the
+//! game's archive index changed. Every replaced file goes into `<mod>/.ard/append.bin` (raw entries as they are,
+//! the others as an xbc1 record: header + zlib), and a copy of bf2.arh with those entries pointing past the archive is
+//! written to `<romfs>/bf2.arh`; the runtime moves each mod's tail after the ones before it, so every mod is prepared
+//! as if it were alone.
+//!
+//! No `.rec` files (ard_pack.py's in-place records): the runtime looks a `.rec` up by the name in the original record's
+//! header (`bl000201.wimdo`, no folders, at most 27 bytes) while ard_pack.py files it under the full path
+//! (`model/bl/bl000201.wimdo.rec`), so such a record was never served (seen 2026-11-26: a model's .wimdo kept the
+//! original while its appended .wismt was the mod's). A repointed index entry is exact and has no name to match.
 //! Loose romfs files (stream/, sound/, ...) need nothing: the runtime overlays them by path.
 
 use flate2::{write::ZlibEncoder, Compression};
@@ -454,7 +458,7 @@ fn stamp(pkg: &Path, root: &Path) -> Option<String> {
         p.metadata().map(|m| m.len()).unwrap_or(0).hash(&mut h);
         mtime(&p).hash(&mut h);
     }
-    Some(format!("v1 arh {} {} ard {} files {:016x}", arh.metadata().ok()?.len(), mtime(&arh), ad.join("bf2.ard").metadata().ok()?.len(), h.finish()))
+    Some(format!("v2 arh {} {} ard {} files {:016x}", arh.metadata().ok()?.len(), mtime(&arh), ad.join("bf2.ard").metadata().ok()?.len(), h.finish()))
 }
 
 /// Builds the mod's archive records (see the module comment).
@@ -511,27 +515,17 @@ pub fn prepare(pkg: &Path, name: &str) -> Result<Prepared, String> {
         ard.seek(SeekFrom::Start(e.offset)).and_then(|_| ard.read_exact(&mut h)).map_err(|e| e.to_string())?;
         let checksum = if &h[..4] == b"xbc1" { u32_at(&h, 0x10) } else { 0 };
         let z = zlib(&data);
-        if z.len() <= e.comp as usize {
-            let mut rec = xbc1_header(&rel, len, e.comp, checksum);
-            rec.extend_from_slice(&z);
-            rec.resize(0x30 + e.comp as usize, 0);
-            let out = out_dir.join(format!("{key}.rec"));
-            if let Some(d) = out.parent() {
-                fs::create_dir_all(d).map_err(|e| e.to_string())?;
-            }
-            fs::write(&out, rec).map_err(|e| e.to_string())?;
-            rep.records += 1;
-        } else if z.len() > data.len() {
+        if z.len() > data.len() {
             rep.skipped.push(rel);
-        } else {
-            let zl = z.len() as u32;
-            for e in &ents {
-                repoint(&mut arh, e.idx, new_off, zl, len);
-            }
-            tail.extend_from_slice(&xbc1_header(&rel, len, zl, checksum));
-            tail.extend_from_slice(&z);
-            rep.appended += 1;
+            continue;
         }
+        let zl = z.len() as u32;
+        for e in &ents {
+            repoint(&mut arh, e.idx, new_off, zl, len);
+        }
+        tail.extend_from_slice(&xbc1_header(&rel, len, zl, checksum));
+        tail.extend_from_slice(&z);
+        rep.appended += 1;
     }
     if !tail.is_empty() {
         fs::write(out_dir.join("append.bin"), &tail).map_err(|e| e.to_string())?;
@@ -559,20 +553,13 @@ pub fn prepare_stale(pkg: &Path) {
 mod tests {
     use super::*;
 
-    /// Reads a file back the way the runtime would: a .rec beats the archive; otherwise the (possibly repointed) arh
-    /// entry, with offsets past bf2.ard served from append.bin. Raw entries are the bytes; others xbc1 + zlib.
+    /// Reads a file back the way the runtime would: the (possibly repointed) arh entry, with offsets past bf2.ard served from append.bin. Raw entries are the bytes; others xbc1 + zlib.
     fn read_back(pkg: &Path, m: &Path, root: &Path, key: &str) -> Vec<u8> {
         let unz = |d: &[u8]| {
             let mut o = Vec::new();
             flate2::read::ZlibDecoder::new(d).read_to_end(&mut o).unwrap();
             o
         };
-        if let Ok(rec) = fs::read(m.join(".ard").join(format!("{key}.rec"))) {
-            let unc = u32_at(&rec, 8) as usize;
-            let mut o = unz(&rec[0x30..]);
-            o.truncate(unc);
-            return o;
-        }
         let ad = archive_dir(pkg).unwrap();
         let arh = fs::read(root.join("bf2.arh")).unwrap_or_else(|_| fs::read(ad.join("bf2.arh")).unwrap());
         let ard_size = ad.join("bf2.ard").metadata().unwrap().len();
@@ -624,6 +611,9 @@ mod tests {
             }
         }
         eprintln!("{checked} file(s) read back identical");
+        let mut ard_files = Vec::new();
+        walk(&m.join(".ard"), &mut ard_files);
+        assert!(!ard_files.iter().any(|p| p.extension().is_some_and(|e| e == "rec")), "no .rec records");
         assert!(checked > 0);
         let l = list(&tmp);
         assert!(l[0].prepared && l[0].enabled);

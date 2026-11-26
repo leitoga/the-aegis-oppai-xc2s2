@@ -1,17 +1,14 @@
-# The Aegis’s Oppai · XC2S2 Edition — v0.1.21
+# The Aegis’s Oppai · XC2S2 Edition — v0.1.22
 
-- **Mods page:** a new **Mods** card lists the folders in `pkg/mods`, with a switch per mod (the runtime's own
-  `[mods] disabled` in `nxrt.ini`), **Add mod** from a folder or a `.zip` (an extra wrapping folder is unwrapped;
-  emulator layouts such as `atmosphere/contents/0100E95004038000/romfs` are accepted), **Remove**, and **Open folder**.
-- **Mods that replace files inside the game's archive work without the port's Python tools:** most of the game's files
-  are inside `bf2.ard`, and the runtime only serves a replacement for those from records prepared beforehand
-  (`tools/mods/ard_pack.py`). The launcher now builds them itself — `.ard/<path>.rec` when the file still fits its slot,
-  otherwise `.ard/append.bin` plus a repointed `romfs/bf2.arh` — when a mod is added, and again before a start when a
-  mod's files or the game's archive index changed. Code patches (`exefs`) and cheats are listed but not applied.
-- Changes take effect the next time the game starts.
+- **Mods that replace files inside the game's archive now take effect.** v0.1.21 prepared a file that still fit its
+  original slot as an in-place record (`.ard/<path>.rec`, the port's `ard_pack.py` layout), but the runtime looks such a
+  record up by the short name in the archive's own header (`bl000201.wimdo`), not by its path, so it was never used:
+  a model kept its original definition while its appended texture was the mod's. Every replaced file now goes after
+  the archive with its index entry repointed, which needs no name to match. Mods prepared by v0.1.21 are prepared again
+  by themselves at the next start.
 
 ---
 
-**Español:** nueva tarjeta **Mods**: activar o desactivar cada mod, agregar mods desde una carpeta o un `.zip`, quitarlos
-y abrir la carpeta. El lanzador prepara solo los mods que reemplazan archivos dentro del archivo grande del juego (antes
-hacía falta una herramienta aparte). Los cambios se aplican la próxima vez que abras el juego.
+**Español:** los mods que cambian modelos ahora sí se aplican. La 0.1.21 preparaba parte de los archivos de una forma que
+el motor no encontraba (por eso Mythra seguía con el traje de siempre). Los mods ya agregados se vuelven a preparar solos
+la próxima vez que abras el juego.
